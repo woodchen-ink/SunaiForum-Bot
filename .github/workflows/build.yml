@@ -8,7 +8,7 @@ on:
       - v*
 
 env:
-  IMAGE_NAME: telegrambot-binance
+  IMAGE_NAME: q58bot
 
 jobs:
   build:
