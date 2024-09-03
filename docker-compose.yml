@@ -1,0 +1,13 @@
+services:
+  q58bot:
+    container_name: q58bot
+    image: woodchen/q58bot:latest
+    restart: always
+    environment:
+      - BOT_TOKEN=719XXX42:AAEydXXXX8rg #换成自己的机器人ID
+      - ADMIN_ID=5912366993 #换成自己的ID
+      - CHAT_ID=-100xxx781  #换成自己的群ID
+      - SYMBOLS=DOGS/USDT,TON/USDT
+      - TZ=Asia/Singapore
+    volumes:
+      - ./data:/app/data
