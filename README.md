@@ -1,5 +1,10 @@
 # Q58-Telegram-Bot
 
+## 示例
+
+![image](https://github.com/user-attachments/assets/b5651dd9-495f-4a65-a248-610956c4a6c1)
+
+
 ## 项目简介
 
 这个项目主要功能：
