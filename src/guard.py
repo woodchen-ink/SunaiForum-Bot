@@ -4,6 +4,7 @@ import logging
 import asyncio
 import time
 from telethon import TelegramClient, events
+from collections import deque
 
 # 环境变量
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
@@ -25,6 +26,33 @@ def save_keywords(keywords):
         json.dump(keywords, f)
 
 KEYWORDS = load_keywords()
+
+class RateLimiter:
+    def __init__(self, max_calls, period):
+        self.max_calls = max_calls
+        self.period = period
+        self.calls = deque()
+
+    async def __aenter__(self):
+        now = time.time()
+        while self.calls and now - self.calls[0] >= self.period:
+            self.calls.popleft()
+        if len(self.calls) >= self.max_calls:
+            await asyncio.sleep(self.period - (now - self.calls[0]))
+        self.calls.append(time.time())
+        return self
+
+    async def __aexit__(self, *args):
+        pass
+
+
+rate_limiter = RateLimiter(max_calls=10, period=1)  # 每秒最多处理10条消息
+
+async def process_message(event):
+    if not event.is_private and any(keyword in event.message.text.lower() for keyword in KEYWORDS):
+        if event.sender_id != ADMIN_ID:
+            await event.delete()
+            await event.respond("已撤回该消息。注:已发送的推广链接不要多次发送,置顶已有项目的推广链接也会自动撤回。")
 
 async def start_bot():
     client = TelegramClient('bot', api_id=6, api_hash='eb06d4abfb49dc3eeb1aeb98ae0f581e')
@@ -55,10 +83,8 @@ async def start_bot():
                 await event.respond(f"当前关键词和语句列表：\n" + "\n".join(KEYWORDS))
             return
 
-        if not event.is_private and any(keyword in event.message.text.lower() for keyword in KEYWORDS):
-            if event.sender_id != ADMIN_ID:
-                await event.delete()
-                await event.respond("已撤回该消息。注:已发送的推广链接不要多次发送,置顶已有项目的推广链接也会自动撤回。")
+        async with rate_limiter:
+            await process_message(event)
 
     logger.info("TeleGuard is running...")
     await client.run_until_disconnected()
