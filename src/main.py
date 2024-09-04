@@ -3,6 +3,7 @@ import multiprocessing
 import guard
 import binance
 import logging
+import asyncio
 from bot_commands import register_commands
 from telethon import TelegramClient
 
@@ -14,6 +15,9 @@ async def setup_bot():
     await client.start(bot_token=BOT_TOKEN)
     await register_commands(client, ADMIN_ID)
     await client.disconnect()
+
+def run_setup_bot():
+    asyncio.run(setup_bot())
 
 def run_guard():
     while True:
@@ -35,8 +39,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     
     # 注册机器人命令
-    import asyncio
-    asyncio.get_event_loop().run_until_complete(setup_bot())
+    run_setup_bot()
     
     # 创建两个进程分别运行 guard 和 binance 服务
     guard_process = multiprocessing.Process(target=run_guard)
