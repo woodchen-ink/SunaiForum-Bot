@@ -1,10 +1,33 @@
 import os
 import json
+from telethon.tl.types import InputPeerUser
+from telethon.tl.functions.bots import SetBotCommandsRequest
+from telethon.tl.types import BotCommand
 
 KEYWORDS_FILE = '/app/data/keywords.json'
 WHITELIST_FILE = '/app/data/whitelist.json'
 ADMIN_ID = int(os.environ.get('ADMIN_ID'))
 
+async def register_commands(client, admin_id):
+    commands = [
+        BotCommand('add', '添加新的关键词'),
+        BotCommand('delete', '删除现有的关键词'),
+        BotCommand('list', '列出所有当前的关键词'),
+        BotCommand('addwhite', '添加域名到白名单'),
+        BotCommand('delwhite', '从白名单移除域名'),
+        BotCommand('listwhite', '列出白名单域名'),
+    ]
+    
+    try:
+        await client(SetBotCommandsRequest(
+            commands=commands,
+            scope=InputPeerUser(admin_id, 0),
+            lang_code=''
+        ))
+        print("Bot commands registered successfully.")
+    except Exception as e:
+        print(f"Failed to register bot commands: {str(e)}")
+        
 def load_json(file_path):
     try:
         with open(file_path, 'r') as f:
@@ -82,3 +105,8 @@ def get_keywords():
 
 def get_whitelist():
     return load_json(WHITELIST_FILE)
+
+
+
+__all__ = ['handle_command', 'get_keywords', 'get_whitelist', 'register_commands']
+
