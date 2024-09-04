@@ -6,8 +6,7 @@ from telethon import TelegramClient, events
 from collections import deque
 import time
 from link_filter import LinkFilter
-from bot_commands import handle_command
-import logging
+from bot_commands import register_commands
 
 
 
@@ -86,9 +85,25 @@ async def message_handler(event, link_filter, rate_limiter):
         async with rate_limiter:
             await process_message(event, event.client)
 
+async def command_handler(event, link_filter):
+    if event.is_private and event.sender_id == ADMIN_ID:
+        link_filter.load_data_from_file()
+        
+        command, *args = event.message.text.split()
+        command = command.lower()
+
+        if command in ['/add', '/delete', '/list']:
+            await link_filter.handle_keyword_command(event, command, args)
+        elif command in ['/addwhite', '/delwhite', '/listwhite']:
+            await link_filter.handle_whitelist_command(event, command, args)
+        
+        if event.raw_text.startswith(('/add', '/delete', '/list', '/addwhite', '/delwhite', '/listwhite')):
+            link_filter.load_data_from_file()
 async def start_bot():
     async with TelegramClient('bot', api_id=6, api_hash='eb06d4abfb49dc3eeb1aeb98ae0f581e') as client:
         await client.start(bot_token=BOT_TOKEN)
+        
+        await register_commands(client, ADMIN_ID)
         
         client.add_event_handler(
             partial(command_handler, link_filter=link_filter),

@@ -111,3 +111,54 @@ class LinkFilter:
         if new_non_whitelisted_links:
             logger.info(f"New non-whitelisted links found: {new_non_whitelisted_links}")
         return False, new_non_whitelisted_links
+    
+    async def handle_keyword_command(self, event, command, args):
+        if command == '/list':
+            self.load_data_from_file()
+            keywords = self.keywords
+            await event.reply("当前关键词列表：\n" + "\n".join(keywords) if keywords else "关键词列表为空。")
+        elif command == '/add' and args:
+            keyword = ' '.join(args)
+            if keyword not in self.keywords:
+                self.add_keyword(keyword)
+                await event.reply(f"关键词 '{keyword}' 已添加。")
+            else:
+                await event.reply(f"关键词 '{keyword}' 已存在。")
+        elif command == '/delete' and args:
+            keyword = ' '.join(args)
+            if self.remove_keyword(keyword):
+                await event.reply(f"关键词 '{keyword}' 已删除。")
+            else:
+                similar_keywords = [k for k in self.keywords if keyword.lower() in k.lower()]
+                if similar_keywords:
+                    await event.reply(f"未找到精确匹配的关键词 '{keyword}'。\n\n以下是相似的关键词：\n" + "\n".join(similar_keywords))
+                else:
+                    await event.reply(f"关键词 '{keyword}' 不存在。")
+        else:
+            await event.reply("无效的命令或参数。")
+
+    async def handle_whitelist_command(self, event, command, args):
+        if command == '/listwhite':
+            self.load_data_from_file()
+            whitelist = self.whitelist
+            await event.reply("白名单域名列表：\n" + "\n".join(whitelist) if whitelist else "白名单为空。")
+        elif command == '/addwhite' and args:
+            domain = args[0].lower()
+            if domain not in self.whitelist:
+                self.whitelist.append(domain)
+                self.save_whitelist()
+                self.load_data_from_file()
+                await event.reply(f"域名 '{domain}' 已添加到白名单。")
+            else:
+                await event.reply(f"域名 '{domain}' 已在白名单中。")
+        elif command == '/delwhite' and args:
+            domain = args[0].lower()
+            if domain in self.whitelist:
+                self.whitelist.remove(domain)
+                self.save_whitelist()
+                self.load_data_from_file()
+                await event.reply(f"域名 '{domain}' 已从白名单中删除。")
+            else:
+                await event.reply(f"域名 '{domain}' 不在白名单中。")
+        else:
+            await event.reply("无效的命令或参数。")
