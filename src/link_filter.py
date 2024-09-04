@@ -29,7 +29,6 @@ class LinkFilter:
             )
             \b
         ''', re.VERBOSE | re.IGNORECASE)
-        logger.info(f"LinkFilter initialized with keywords file: {keywords_file} and whitelist file: {whitelist_file}")
 
 
     def load_json(self, file_path):
@@ -81,14 +80,13 @@ class LinkFilter:
             logger.debug(f"Keyword already exists: {keyword}")
 
     def remove_keyword(self, keyword):
-        if self.link_pattern.match(keyword):
-            keyword = self.normalize_link(keyword)
         if keyword in self.keywords:
             self.keywords.remove(keyword)
-            self.load_data_from_file()  # 重新加载文件
             self.save_keywords()
+            self.load_data_from_file()  # 重新加载以确保数据同步
             return True
         return False
+
 
     def should_filter(self, text):
         logger.debug(f"Checking text: {text}")

@@ -55,26 +55,23 @@ async def handle_keyword_command(event, command, args):
         keyword = ' '.join(args)
         if keyword not in link_filter.keywords:
             link_filter.add_keyword(keyword)
-            link_filter.load_data_from_file()  # 重新加载以确保数据同步
             await event.reply(f"关键词 '{keyword}' 已添加。")
         else:
             await event.reply(f"关键词 '{keyword}' 已存在。")
     elif command == '/delete' and args:
         keyword = ' '.join(args)
-        matching_keywords = [k for k in link_filter.keywords if k.lower() == keyword.lower()]
-        if matching_keywords:
-            for k in matching_keywords:
-                link_filter.remove_keyword(k)
-            link_filter.load_data_from_file()  # 重新加载以确保数据同步
+        if link_filter.remove_keyword(keyword):
             await event.reply(f"关键词 '{keyword}' 已删除。")
         else:
+            # 如果没有精确匹配，尝试查找部分匹配的关键词
             similar_keywords = [k for k in link_filter.keywords if keyword.lower() in k.lower()]
             if similar_keywords:
-                await event.reply(f"未找到精确匹配的关键词 '{keyword}'。\n\n是否要删除以下相似的关键词？\n" + "\n".join(similar_keywords))
+                await event.reply(f"未找到精确匹配的关键词 '{keyword}'。\n\n以下是相似的关键词：\n" + "\n".join(similar_keywords))
             else:
                 await event.reply(f"关键词 '{keyword}' 不存在。")
     else:
         await event.reply("无效的命令或参数。")
+
 
 async def handle_whitelist_command(event, command, args):
     if command == '/listwhite':

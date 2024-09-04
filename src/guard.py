@@ -9,6 +9,14 @@ from link_filter import LinkFilter
 from bot_commands import handle_command
 import logging
 
+
+
+# 环境变量
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
+ADMIN_ID = int(os.environ.get('ADMIN_ID'))
+KEYWORDS_FILE = '/app/data/keywords.json'
+WHITELIST_FILE = '/app/data/whitelist.json'
+
 # 设置日志
 DEBUG_MODE = os.environ.get('DEBUG_MODE', 'False').lower() == 'true'
 
@@ -21,16 +29,6 @@ link_filter_logger.setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
 
 # 调整第三方库的日志级别
 logging.getLogger('telethon').setLevel(logging.WARNING)
-
-# 环境变量
-BOT_TOKEN = os.environ.get('BOT_TOKEN')
-ADMIN_ID = int(os.environ.get('ADMIN_ID'))
-KEYWORDS_FILE = '/app/data/keywords.json'
-WHITELIST_FILE = '/app/data/whitelist.json'
-
-# 设置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger('TeleGuard')
 
 # 创建 LinkFilter 实例
 link_filter = LinkFilter(KEYWORDS_FILE, WHITELIST_FILE)
