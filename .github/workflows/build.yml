@@ -30,8 +30,7 @@ jobs:
 
       - name: Run tests (if any)
         run: |
-          # Add your test commands here
-          # For example: python -m unittest discover tests
+          python -m unittest discover tests
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
