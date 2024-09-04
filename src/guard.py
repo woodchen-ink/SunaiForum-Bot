@@ -10,8 +10,17 @@ from bot_commands import handle_command
 import logging
 
 # 设置日志
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+DEBUG_MODE = os.environ.get('DEBUG_MODE', 'False').lower() == 'true'
+
+logging.basicConfig(level=logging.INFO if not DEBUG_MODE else logging.DEBUG, 
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 logger = logging.getLogger('TeleGuard')
+link_filter_logger = logging.getLogger('TeleGuard.LinkFilter')
+link_filter_logger.setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
+
+# 调整第三方库的日志级别
+logging.getLogger('telethon').setLevel(logging.WARNING)
 
 # 环境变量
 BOT_TOKEN = os.environ.get('BOT_TOKEN')

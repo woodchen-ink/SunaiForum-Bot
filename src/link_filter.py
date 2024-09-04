@@ -52,6 +52,7 @@ class LinkFilter:
     def load_data_from_file(self):
         self.keywords = self.load_json(self.keywords_file)
         self.whitelist = self.load_json(self.whitelist_file)
+        logger.info(f"Reloaded {len(self.keywords)} keywords and {len(self.whitelist)} whitelist entries")
 
     def normalize_link(self, link):
         link = re.sub(r'^https?://', '', link)
@@ -75,6 +76,7 @@ class LinkFilter:
             self.keywords.append(keyword)
             self.save_keywords()
             logger.info(f"New keyword added: {keyword}")
+            self.load_data_from_file()  # 重新加载文件
         else:
             logger.debug(f"Keyword already exists: {keyword}")
 
@@ -83,6 +85,7 @@ class LinkFilter:
             keyword = self.normalize_link(keyword)
         if keyword in self.keywords:
             self.keywords.remove(keyword)
+            self.load_data_from_file()  # 重新加载文件
             self.save_keywords()
             return True
         return False
