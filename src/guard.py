@@ -74,17 +74,12 @@ async def process_message(event, client):
             logger.info(f"New non-whitelisted links found: {new_links}")
 
 
-async def command_handler(event, link_filter):
-    if event.is_private and event.sender_id == ADMIN_ID:
-        await handle_command(event, event.client)
-        if event.raw_text.startswith(('/add', '/delete', '/list', '/addwhite', '/delwhite', '/listwhite')):
-            link_filter.load_data_from_file()
-
 async def message_handler(event, link_filter, rate_limiter):
     if not event.is_private or event.sender_id != ADMIN_ID:
         async with rate_limiter:
             await process_message(event, event.client)
 
+# 处理请求
 async def command_handler(event, link_filter):
     if event.is_private and event.sender_id == ADMIN_ID:
         link_filter.load_data_from_file()
