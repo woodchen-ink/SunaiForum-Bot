@@ -1,3 +1,4 @@
+import os
 from telethon import events
 from telethon.tl.types import InputPeerUser
 from telethon.tl.functions.bots import SetBotCommandsRequest
@@ -7,7 +8,7 @@ import json
 
 KEYWORDS_FILE = '/app/data/keywords.json'
 WHITELIST_FILE = '/app/data/whitelist.json'
-
+ADMIN_ID = int(os.environ.get('ADMIN_ID'))
 def load_json(file_path):
     try:
         with open(file_path, 'r') as f:
@@ -41,7 +42,7 @@ async def register_commands(client, admin_id):
 
 async def handle_keyword_command(event, client):
     sender = await event.get_sender()
-    if sender.id != int(os.environ.get('ADMIN_ID')):
+    if sender.id != ADMIN_ID:
         return
 
     command = event.message.text.split(maxsplit=1)
@@ -84,7 +85,7 @@ async def execute_keyword_command(event, command, keyword):
 
 async def handle_whitelist_command(event, client):
     sender = await event.get_sender()
-    if sender.id != int(os.environ.get('ADMIN_ID')):
+    if sender.id != ADMIN_ID:
         return
 
     command = event.message.text.split(maxsplit=1)
