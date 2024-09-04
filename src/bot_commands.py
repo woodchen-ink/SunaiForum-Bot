@@ -6,6 +6,9 @@ from telethon.tl.types import BotCommand
 import logging
 import json
 
+__all__ = ['register_commands', 'handle_command', 'get_keywords', 'get_whitelist']
+
+
 KEYWORDS_FILE = '/app/data/keywords.json'
 WHITELIST_FILE = '/app/data/whitelist.json'
 ADMIN_ID = int(os.environ.get('ADMIN_ID'))
@@ -54,7 +57,6 @@ async def handle_keyword_command(event, client):
         await execute_keyword_command(event, command[0], command[1])
     else:
         await event.reply(f"请输入你要{command[0][1:]}的关键词：")
-        
         async with client.conversation(sender) as conv:
             response = await conv.get_response()
             await execute_keyword_command(event, command[0], response.text)
@@ -98,7 +100,6 @@ async def handle_whitelist_command(event, client):
         await execute_whitelist_command(event, command[0], command[1])
     else:
         await event.reply(f"请输入你要{command[0][1:]}的域名：")
-        
         async with client.conversation(sender) as conv:
             response = await conv.get_response()
             await execute_whitelist_command(event, command[0], response.text)
@@ -134,3 +135,17 @@ def get_keywords():
 
 def get_whitelist():
     return load_json(WHITELIST_FILE)
+
+async def handle_command(event, client):
+    sender = await event.get_sender()
+    if sender.id != ADMIN_ID:
+        return
+
+    command = event.message.text.split(maxsplit=1)
+    
+    if command[0].lower() in ['/add', '/delete', '/list']:
+        await handle_keyword_command(event, client)
+    elif command[0].lower() in ['/addwhite', '/delwhite', '/listwhite']:
+        await handle_whitelist_command(event, client)
+
+

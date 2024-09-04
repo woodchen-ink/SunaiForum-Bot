@@ -5,7 +5,8 @@ import time
 from telethon import TelegramClient, events
 from collections import deque
 from link_filter import LinkFilter
-from bot_commands import handle_keyword_command, handle_whitelist_command, get_keywords
+from bot_commands import handle_command, get_keywords
+
 
 # 环境变量
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
@@ -23,16 +24,6 @@ link_filter = LinkFilter('/app/data/keywords.json', '/app/data/whitelist.json')
 # 限速器
 class RateLimiter:
     def __init__(self, max_calls, period):
-        """
-        初始化RateLimiter类的实例。
-
-        参数:
-        max_calls (int): 限制的最大调用次数。
-        period (float): 限定的时间周期（秒）。
-
-        该构造函数设置了速率限制器的基本参数，并初始化了一个双端队列，
-        用于跟踪调用的时间点，以 enforcement of the rate limiting policy。
-        """
         # 限制的最大调用次数
         self.max_calls = max_calls
         # 限定的时间周期（秒）
@@ -85,29 +76,31 @@ async def process_message(event, client):
                 notification = await event.respond("已撤回该消息。注:已发送的推广链接不要多次发送,置顶已有项目的推广链接也会自动撤回。")
                 asyncio.create_task(delete_message_after_delay(client, event.chat_id, notification, 30 * 60))
 
+async def command_handler(event):
+    if event.is_private and event.sender_id == ADMIN_ID:
+        await handle_command(event, event.client)
+        if event.raw_text.startswith(('/add', '/delete', '/list')):
+            link_filter.reload_keywords()
+        elif event.raw_text.startswith(('/addwhite', '/delwhite', '/listwhite')):
+            link_filter.reload_whitelist()
+
+async def message_handler(event):
+    if not event.is_private or event.sender_id != ADMIN_ID:
+        async with rate_limiter:
+            await process_message(event, event.client)
 # 启动机器人函数
 async def start_bot():
     client = TelegramClient('bot', api_id=6, api_hash='eb06d4abfb49dc3eeb1aeb98ae0f581e')
     await client.start(bot_token=BOT_TOKEN)
     
-    @client.on(events.NewMessage(pattern='/add|/delete|/list'))
-    async def keyword_handler(event):
-        await handle_keyword_command(event, client)
-        link_filter.reload_keywords()  # 重新加载关键词
-
-    @client.on(events.NewMessage(pattern='/addwhite|/delwhite|/listwhite'))
-    async def whitelist_handler(event):
-        await handle_whitelist_command(event, client)
-        link_filter.reload_whitelist()  # 重新加载白名单
-
-    @client.on(events.NewMessage(pattern=''))
-    async def message_handler(event):
-        if not event.is_private or event.sender_id != ADMIN_ID:
-            async with rate_limiter:
-                await process_message(event, client)
+    client.add_event_handler(command_handler, events.NewMessage(pattern='/add|/delete|/list|/addwhite|/delwhite|/listwhite'))
+    client.add_event_handler(message_handler, events.NewMessage())
 
     logger.info("TeleGuard is running...")
     await client.run_until_disconnected()
+
+
+
     
 # 主函数
 def run():
