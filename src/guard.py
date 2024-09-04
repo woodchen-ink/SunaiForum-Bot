@@ -84,6 +84,7 @@ async def command_handler(event):
         elif event.raw_text.startswith(('/addwhite', '/delwhite', '/listwhite')):
             link_filter.reload_whitelist()
 
+
 async def message_handler(event):
     if not event.is_private or event.sender_id != ADMIN_ID:
         async with rate_limiter:
@@ -98,9 +99,6 @@ async def start_bot():
 
     logger.info("TeleGuard is running...")
     await client.run_until_disconnected()
-
-
-
     
 # 主函数
 def run():
