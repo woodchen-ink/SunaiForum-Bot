@@ -100,5 +100,8 @@ async def main():
             logger.info("Attempting to restart TeleGuard in 60 seconds...")
             await asyncio.sleep(60)
 
-if __name__ == '__main__':
+def run():
     asyncio.run(main())
+
+if __name__ == '__main__':
+    run()
