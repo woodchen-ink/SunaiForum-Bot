@@ -5,7 +5,7 @@ import time
 from telethon import TelegramClient, events
 from collections import deque
 from link_filter import LinkFilter
-from bot_commands import handle_command, get_keywords
+from bot_commands import handle_command
 
 
 # 环境变量
@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger('TeleGuard')
 
 # 创建 LinkFilter 实例
-link_filter = LinkFilter('/app/data/keywords.json', '/app/data/whitelist.json')
+link_filter = LinkFilter(KEYWORDS_FILE, WHITELIST_FILE)
 
 # 限速器
 class RateLimiter:
@@ -60,21 +60,20 @@ async def delete_message_after_delay(client, chat, message, delay):
 # 处理消息函数
 async def process_message(event, client):
     if not event.is_private:
-        # 检查消息是否包含需要过滤的链接
-        if link_filter.should_filter(event.message.text):
+        # 检查消息是否包含已知的关键词（包括之前添加的非白名单链接）
+        if any(keyword in event.message.text for keyword in link_filter.keywords):
             if event.sender_id != ADMIN_ID:
                 await event.delete()
-                notification = await event.respond("已撤回该消息。注:重复发送的链接会被自动撤回。")
-                asyncio.create_task(delete_message_after_delay(client, event.chat_id, notification, 30 * 60))
+                notification = await event.respond("已撤回该消息。注:重复发送的推广链接会被自动撤回。")
+                asyncio.create_task(delete_message_after_delay(client, event.chat_id, notification, 3 * 60))
             return
 
-        # 检查关键词
-        keywords = get_keywords()
-        if any(keyword in event.message.text.lower() for keyword in keywords):
-            if event.sender_id != ADMIN_ID:
-                await event.delete()
-                notification = await event.respond("已撤回该消息。注:已发送的推广链接不要多次发送,置顶已有项目的推广链接也会自动撤回。")
-                asyncio.create_task(delete_message_after_delay(client, event.chat_id, notification, 30 * 60))
+        # 检查是否有新的非白名单链接
+        new_links = link_filter.should_filter(event.message.text)
+        if new_links:
+            # 这是第一次发送这些非白名单链接，我们允许消息通过，不发送任何警告
+            pass
+
 
 async def command_handler(event):
     if event.is_private and event.sender_id == ADMIN_ID:

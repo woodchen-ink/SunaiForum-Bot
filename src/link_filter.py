@@ -38,8 +38,24 @@ class LinkFilter:
 
     def is_whitelisted(self, link):
         extracted = tldextract.extract(link)
-        domain = f"{extracted.domain}.{extracted.suffix}"
-        return domain in self.whitelist
+        full_domain = '.'.join(part for part in [extracted.subdomain, extracted.domain, extracted.suffix] if part)
+        main_domain = f"{extracted.domain}.{extracted.suffix}"
+        
+        # 检查完整域名（包括子域名）
+        if full_domain in self.whitelist:
+            return True
+        
+        # 检查主域名
+        if main_domain in self.whitelist:
+            return True
+        
+        # 检查是否有通配符匹配
+        wildcard_domain = f"*.{main_domain}"
+        if wildcard_domain in self.whitelist:
+            return True
+        
+        return False
+
 
     def add_keyword(self, link):
         if link not in self.keywords:
@@ -48,13 +64,13 @@ class LinkFilter:
 
     def should_filter(self, text):
         links = self.link_pattern.findall(text)
+        new_non_whitelisted_links = []
         for link in links:
             if not self.is_whitelisted(link):
-                if link in self.keywords:
-                    return True
-                else:
+                if link not in self.keywords:
+                    new_non_whitelisted_links.append(link)
                     self.add_keyword(link)
-        return False
+        return new_non_whitelisted_links
 
     def reload_keywords(self):
         self.keywords = self.load_json(self.keywords_file)
