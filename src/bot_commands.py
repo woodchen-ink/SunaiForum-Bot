@@ -9,6 +9,7 @@ import json
 KEYWORDS_FILE = '/app/data/keywords.json'
 WHITELIST_FILE = '/app/data/whitelist.json'
 ADMIN_ID = int(os.environ.get('ADMIN_ID'))
+
 def load_json(file_path):
     try:
         with open(file_path, 'r') as f:
@@ -47,11 +48,11 @@ async def handle_keyword_command(event, client):
 
     command = event.message.text.split(maxsplit=1)
     
-    if len(command) > 1:
-        # 直接执行命令
+    if command[0].lower() == '/list':
+        await execute_keyword_command(event, '/list', '')
+    elif len(command) > 1:
         await execute_keyword_command(event, command[0], command[1])
     else:
-        # 进入交互模式
         await event.reply(f"请输入你要{command[0][1:]}的关键词：")
         
         async with client.conversation(sender) as conv:
@@ -60,6 +61,13 @@ async def handle_keyword_command(event, client):
 
 async def execute_keyword_command(event, command, keyword):
     keywords = load_json(KEYWORDS_FILE)
+    
+    if command.lower() == '/list':
+        if keywords:
+            await event.reply(f"当前关键词和语句列表：\n" + "\n".join(keywords))
+        else:
+            await event.reply("关键词列表为空。")
+        return
     
     if command.lower() == '/add':
         if keyword.lower() not in keywords:
@@ -76,12 +84,6 @@ async def execute_keyword_command(event, command, keyword):
             await event.reply(f"关键词或语句 '{keyword}' 已从列表中删除。")
         else:
             await event.reply(f"关键词或语句 '{keyword}' 不在列表中。")
-    
-    elif command.lower() == '/list':
-        if keywords:
-            await event.reply(f"当前关键词和语句列表：\n" + "\n".join(keywords))
-        else:
-            await event.reply("关键词列表为空。")
 
 async def handle_whitelist_command(event, client):
     sender = await event.get_sender()
@@ -90,11 +92,11 @@ async def handle_whitelist_command(event, client):
 
     command = event.message.text.split(maxsplit=1)
     
-    if len(command) > 1:
-        # 直接执行命令
+    if command[0].lower() == '/listwhite':
+        await execute_whitelist_command(event, '/listwhite', '')
+    elif len(command) > 1:
         await execute_whitelist_command(event, command[0], command[1])
     else:
-        # 进入交互模式
         await event.reply(f"请输入你要{command[0][1:]}的域名：")
         
         async with client.conversation(sender) as conv:
@@ -103,6 +105,13 @@ async def handle_whitelist_command(event, client):
 
 async def execute_whitelist_command(event, command, domain):
     whitelist = load_json(WHITELIST_FILE)
+    
+    if command.lower() == '/listwhite':
+        if whitelist:
+            await event.reply("白名单域名列表：\n" + "\n".join(whitelist))
+        else:
+            await event.reply("白名单为空。")
+        return
     
     if command.lower() == '/addwhite':
         if domain.lower() not in whitelist:
@@ -119,12 +128,9 @@ async def execute_whitelist_command(event, command, domain):
             await event.reply(f"域名 '{domain}' 已从白名单中移除。")
         else:
             await event.reply(f"域名 '{domain}' 不在白名单中。")
-    
-    elif command.lower() == '/listwhite':
-        if whitelist:
-            await event.reply("白名单域名列表：\n" + "\n".join(whitelist))
-        else:
-            await event.reply("白名单为空。")
 
 def get_keywords():
     return load_json(KEYWORDS_FILE)
+
+def get_whitelist():
+    return load_json(WHITELIST_FILE)
