@@ -7,6 +7,11 @@ from collections import deque
 import time
 from link_filter import LinkFilter
 from bot_commands import handle_command
+import logging
+
+# 设置日志
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('TeleGuard')
 
 # 环境变量
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
@@ -50,16 +55,18 @@ async def delete_message_after_delay(client, chat, message, delay):
 
 async def process_message(event, client):
     if not event.is_private:
+        logger.debug(f"Processing message: {event.message.text}")
         should_filter, new_links = link_filter.should_filter(event.message.text)
         if should_filter:
+            logger.info(f"Message should be filtered: {event.message.text}")
             if event.sender_id != ADMIN_ID:
                 await event.delete()
                 notification = await event.respond("已撤回该消息。注:包含关键词或重复发送的非白名单链接会被自动撤回。")
                 asyncio.create_task(delete_message_after_delay(client, event.chat_id, notification, 3 * 60))
             return
         if new_links:
-            # 可以在这里添加日志记录或其他操作
-            pass
+            logger.info(f"New non-whitelisted links found: {new_links}")
+
 
 async def command_handler(event, link_filter):
     if event.is_private and event.sender_id == ADMIN_ID:
