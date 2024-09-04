@@ -1,36 +1,43 @@
 import os
-import json
 import logging
 import asyncio
 import time
 from telethon import TelegramClient, events
 from collections import deque
+from link_filter import LinkFilter
+from bot_commands import handle_keyword_command, handle_whitelist_command, get_keywords
 
 # 环境变量
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 ADMIN_ID = int(os.environ.get('ADMIN_ID'))
 KEYWORDS_FILE = '/app/data/keywords.json'
+WHITELIST_FILE = '/app/data/whitelist.json'
 
 # 设置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('TeleGuard')
 
-def load_keywords():
-    if os.path.exists(KEYWORDS_FILE):
-        with open(KEYWORDS_FILE, 'r') as f:
-            return json.load(f)
-    return ['推广', '广告', 'ad', 'promotion']
+# 创建 LinkFilter 实例
+link_filter = LinkFilter('/app/data/keywords.json', '/app/data/whitelist.json')
 
-def save_keywords(keywords):
-    with open(KEYWORDS_FILE, 'w') as f:
-        json.dump(keywords, f)
-
-KEYWORDS = load_keywords()
-
+# 限速器
 class RateLimiter:
     def __init__(self, max_calls, period):
+        """
+        初始化RateLimiter类的实例。
+
+        参数:
+        max_calls (int): 限制的最大调用次数。
+        period (float): 限定的时间周期（秒）。
+
+        该构造函数设置了速率限制器的基本参数，并初始化了一个双端队列，
+        用于跟踪调用的时间点，以 enforcement of the rate limiting policy。
+        """
+        # 限制的最大调用次数
         self.max_calls = max_calls
+        # 限定的时间周期（秒）
         self.period = period
+        # 用于存储调用时间的双端队列
         self.calls = deque()
 
     async def __aenter__(self):
@@ -45,50 +52,64 @@ class RateLimiter:
     async def __aexit__(self, *args):
         pass
 
-
 rate_limiter = RateLimiter(max_calls=10, period=1)  # 每秒最多处理10条消息
 
-async def process_message(event):
-    if not event.is_private and any(keyword in event.message.text.lower() for keyword in KEYWORDS):
-        if event.sender_id != ADMIN_ID:
-            await event.delete()
-            await event.respond("已撤回该消息。注:已发送的推广链接不要多次发送,置顶已有项目的推广链接也会自动撤回。")
+# 延迟删除消息函数
+async def delete_message_after_delay(client, chat, message, delay):
+    # 延迟指定的时间
+    await asyncio.sleep(delay)
+    
+    # 尝试删除消息
+    try:
+        await client.delete_messages(chat, message)
+    except Exception as e:
+        # 如果删除失败，记录错误
+        logger.error(f"Failed to delete message: {e}")
 
+# 处理消息函数
+async def process_message(event, client):
+    if not event.is_private:
+        # 检查消息是否包含需要过滤的链接
+        if link_filter.should_filter(event.message.text):
+            if event.sender_id != ADMIN_ID:
+                await event.delete()
+                notification = await event.respond("已撤回该消息。注:重复发送的链接会被自动撤回。")
+                asyncio.create_task(delete_message_after_delay(client, event.chat_id, notification, 30 * 60))
+            return
+
+        # 检查关键词
+        keywords = get_keywords()
+        if any(keyword in event.message.text.lower() for keyword in keywords):
+            if event.sender_id != ADMIN_ID:
+                await event.delete()
+                notification = await event.respond("已撤回该消息。注:已发送的推广链接不要多次发送,置顶已有项目的推广链接也会自动撤回。")
+                asyncio.create_task(delete_message_after_delay(client, event.chat_id, notification, 30 * 60))
+
+# 启动机器人函数
 async def start_bot():
     client = TelegramClient('bot', api_id=6, api_hash='eb06d4abfb49dc3eeb1aeb98ae0f581e')
     await client.start(bot_token=BOT_TOKEN)
     
-    @client.on(events.NewMessage(pattern=''))
-    async def handler(event):
-        global KEYWORDS
-        if event.is_private and event.sender_id == ADMIN_ID:
-            command = event.message.text.split(maxsplit=1)
-            if command[0].lower() == '/add' and len(command) > 1:
-                new_keyword = command[1].lower()
-                if new_keyword not in KEYWORDS:
-                    KEYWORDS.append(new_keyword)
-                    save_keywords(KEYWORDS)
-                    await event.respond(f"关键词或语句 '{new_keyword}' 已添加到列表中。")
-                else:
-                    await event.respond(f"关键词或语句 '{new_keyword}' 已经在列表中。")
-            elif command[0].lower() == '/delete' and len(command) > 1:
-                keyword_to_delete = command[1].lower()
-                if keyword_to_delete in KEYWORDS:
-                    KEYWORDS.remove(keyword_to_delete)
-                    save_keywords(KEYWORDS)
-                    await event.respond(f"关键词或语句 '{keyword_to_delete}' 已从列表中删除。")
-                else:
-                    await event.respond(f"关键词或语句 '{keyword_to_delete}' 不在列表中。")
-            elif command[0].lower() == '/list':
-                await event.respond(f"当前关键词和语句列表：\n" + "\n".join(KEYWORDS))
-            return
+    @client.on(events.NewMessage(pattern='/add|/delete|/list'))
+    async def keyword_handler(event):
+        await handle_keyword_command(event, client)
+        link_filter.reload_keywords()  # 重新加载关键词
 
-        async with rate_limiter:
-            await process_message(event)
+    @client.on(events.NewMessage(pattern='/addwhite|/delwhite|/listwhite'))
+    async def whitelist_handler(event):
+        await handle_whitelist_command(event, client)
+        link_filter.reload_whitelist()  # 重新加载白名单
+
+    @client.on(events.NewMessage(pattern=''))
+    async def message_handler(event):
+        if not event.is_private or event.sender_id != ADMIN_ID:
+            async with rate_limiter:
+                await process_message(event, client)
 
     logger.info("TeleGuard is running...")
     await client.run_until_disconnected()
-
+    
+# 主函数
 def run():
     while True:
         try:
