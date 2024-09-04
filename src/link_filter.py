@@ -71,13 +71,12 @@ class LinkFilter:
             self.save_keywords()
 
     def remove_keyword(self, keyword):
-        if self.link_pattern.match(keyword):
-            keyword = self.normalize_link(keyword)
         if keyword in self.keywords:
             self.keywords.remove(keyword)
             self.save_keywords()
             return True
         return False
+
 
     def should_filter(self, text):
         # 检查是否包含关键词
