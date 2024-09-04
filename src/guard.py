@@ -60,19 +60,21 @@ async def delete_message_after_delay(client, chat, message, delay):
 # 处理消息函数
 async def process_message(event, client):
     if not event.is_private:
-        # 检查消息是否包含已知的关键词（包括之前添加的非白名单链接）
-        if any(keyword in event.message.text for keyword in link_filter.keywords):
+        # 检查消息是否应该被过滤
+        should_filter, new_links = link_filter.should_filter(event.message.text)
+
+        if should_filter:
             if event.sender_id != ADMIN_ID:
                 await event.delete()
-                notification = await event.respond("已撤回该消息。注:重复发送的推广链接会被自动撤回。")
+                notification = await event.respond("已撤回该消息。注:包含关键词或重复发送的非白名单链接会被自动撤回。")
                 asyncio.create_task(delete_message_after_delay(client, event.chat_id, notification, 3 * 60))
             return
 
-        # 检查是否有新的非白名单链接
-        new_links = link_filter.should_filter(event.message.text)
         if new_links:
             # 这是第一次发送这些非白名单链接，我们允许消息通过，不发送任何警告
+            # 如果需要，可以在这里添加日志记录或其他操作
             pass
+
 
 
 async def command_handler(event):
