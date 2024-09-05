@@ -67,7 +67,7 @@ async def process_message(event, client):
             logger.info(f"Message should be filtered: {event.message.text}")
             if event.sender_id != ADMIN_ID:
                 await event.delete()
-                notification = await event.respond("已撤回该消息。注:已置顶项目分享链接, 二次分享链接, 都会被撤回.")
+                notification = await event.respond("已撤回该消息。注:一个链接不能发两次.")
                 asyncio.create_task(delete_message_after_delay(client, event.chat_id, notification, 3 * 60))
             return
         if new_links:
@@ -87,12 +87,12 @@ async def command_handler(event, link_filter):
         command, *args = event.message.text.split()
         command = command.lower()
 
-        if command in ['/add', '/delete', '/list']:
+        if command in ['/add', '/delete', '/list', '/deletecontaining']:
             await link_filter.handle_keyword_command(event, command, args)
         elif command in ['/addwhite', '/delwhite', '/listwhite']:
             await link_filter.handle_whitelist_command(event, command, args)
         
-        if event.raw_text.startswith(('/add', '/delete', '/list', '/addwhite', '/delwhite', '/listwhite')):
+        if event.raw_text.startswith(('/add', '/delete', '/deletecontaining','/list', '/addwhite', '/delwhite', '/listwhite')):
             link_filter.load_data_from_file()
 async def start_bot():
     async with TelegramClient('bot', api_id=6, api_hash='eb06d4abfb49dc3eeb1aeb98ae0f581e') as client:

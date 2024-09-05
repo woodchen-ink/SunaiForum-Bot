@@ -7,6 +7,7 @@ async def register_commands(client, admin_id):
         BotCommand('add', '添加新的关键词'),
         BotCommand('delete', '删除现有的关键词'),
         BotCommand('list', '列出所有当前的关键词'),
+        BotCommand('deletecontaining', '删除所有包含指定词语的关键词'),
         BotCommand('addwhite', '添加域名到白名单'),
         BotCommand('delwhite', '从白名单移除域名'),
         BotCommand('listwhite', '列出白名单域名'),

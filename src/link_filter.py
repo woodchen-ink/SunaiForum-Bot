@@ -95,6 +95,25 @@ class LinkFilter:
             self.load_data_from_file()  # 重新加载以确保数据同步
             return True
         return False
+    
+    def remove_keywords_containing(self, substring):
+        # 记录原始关键词列表的长度
+        original_count = len(self.keywords)
+        
+        # 创建一个列表，包含所有需要移除的关键词
+        removed_keywords = [kw for kw in self.keywords if substring.lower() in kw.lower()]
+        
+        # 修改关键词列表，仅保留不包含指定子字符串的关键词
+        self.keywords = [kw for kw in self.keywords if substring.lower() not in kw.lower()]
+        
+        # 如果有关键词被移除，则保存关键词列表并重新加载数据
+        if removed_keywords:
+            self.save_keywords()
+            self.load_data_from_file()
+        
+        # 返回被移除的关键词列表
+        return removed_keywords
+
 
 
     def should_filter(self, text):
@@ -145,6 +164,13 @@ class LinkFilter:
                     await event.reply(f"未找到精确匹配的关键词 '{keyword}'。\n\n以下是相似的关键词：\n" + "\n".join(similar_keywords))
                 else:
                     await event.reply(f"关键词 '{keyword}' 不存在。")
+        elif command == '/deletecontaining' and args:
+            substring = ' '.join(args)
+            removed_keywords = self.remove_keywords_containing(substring)
+            if removed_keywords:
+                await event.reply(f"已删除包含 '{substring}' 的以下关键词：\n" + "\n".join(removed_keywords))
+            else:
+                await event.reply(f"没有找到包含 '{substring}' 的关键词。")
         else:
             await event.reply("无效的命令或参数。")
 
