@@ -78,6 +78,8 @@ class LinkFilter:
     def add_keyword(self, keyword):
         if self.link_pattern.match(keyword):
             keyword = self.normalize_link(keyword)
+        # 确保在这里去掉开头的双斜杠
+        keyword = keyword.lstrip('/')
         if keyword not in self.keywords:
             self.keywords.append(keyword)
             self.save_keywords()
