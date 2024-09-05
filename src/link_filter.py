@@ -54,12 +54,19 @@ class LinkFilter:
         logger.info(f"Reloaded {len(self.keywords)} keywords and {len(self.whitelist)} whitelist entries")
 
     def normalize_link(self, link):
+    # 移除协议部分（如 http:// 或 https://）
         link = re.sub(r'^https?://', '', link)
+        
+        # 移除开头的双斜杠
+        link = link.lstrip('/')
+        
         parsed = urllib.parse.urlparse(f"http://{link}")
         normalized = urllib.parse.urlunparse(('', parsed.netloc, parsed.path, parsed.params, parsed.query, ''))
         result = normalized.rstrip('/')
+        
         logger.debug(f"Normalized link: {link} -> {result}")
         return result
+
 
     def is_whitelisted(self, link):
         extracted = tldextract.extract(link)
