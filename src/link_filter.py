@@ -108,6 +108,7 @@ class LinkFilter:
         new_non_whitelisted_links = []
         for link in links:
             normalized_link = self.normalize_link(link)
+            normalized_link = normalized_link.lstrip('/')  # 去除开头的双斜杠
             if not self.is_whitelisted(normalized_link):
                 logger.debug(f"Link not whitelisted: {normalized_link}")
                 if normalized_link not in self.keywords:
@@ -120,6 +121,7 @@ class LinkFilter:
         if new_non_whitelisted_links:
             logger.info(f"New non-whitelisted links found: {new_non_whitelisted_links}")
         return False, new_non_whitelisted_links
+
     
     async def handle_keyword_command(self, event, command, args):
         if command == '/list':

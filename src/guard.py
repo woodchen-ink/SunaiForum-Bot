@@ -67,7 +67,7 @@ async def process_message(event, client):
             logger.info(f"Message should be filtered: {event.message.text}")
             if event.sender_id != ADMIN_ID:
                 await event.delete()
-                notification = await event.respond("已撤回该消息。注:包含关键词或重复发送的非白名单链接会被自动撤回。")
+                notification = await event.respond("已撤回该消息。注:已置顶项目分享链接, 二次分享链接, 都会被撤回.")
                 asyncio.create_task(delete_message_after_delay(client, event.chat_id, notification, 3 * 60))
             return
         if new_links:
