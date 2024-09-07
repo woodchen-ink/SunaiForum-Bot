@@ -22,12 +22,12 @@ def get_ticker_info(symbol):
         'symbol': symbol,
         'last': ticker['last'],
         'change_percent': ticker['percentage'],
-        'high': ticker['high'],
-        'low': ticker['low'],
-        'volume': ticker['baseVolume'],
-        'quote_volume': ticker['quoteVolume'],
-        'bid': ticker['bid'],
-        'ask': ticker['ask']
+        # 'high': ticker['high'],
+        # 'low': ticker['low'],
+        # 'volume': ticker['baseVolume'],
+        # 'quote_volume': ticker['quoteVolume'],
+        # 'bid': ticker['bid'],
+        # 'ask': ticker['ask']
     }
 
 def format_change(change_percent):
@@ -50,10 +50,10 @@ def send_price_update():
         message += f"*{info['symbol']}*\n"
         message += f"价格: ${info['last']:.7f}\n"
         message += f"24h 涨跌: {change_str}\n"
-        message += f"24h 高/低: ${info['high']:.7f} / ${info['low']:.7f}\n"
-        message += f"24h 成交量: {info['volume']:.2f}\n"
-        message += f"24h 成交额: ${info['quote_volume']:.2f}\n"
-        message += f"买一/卖一: ${info['bid']:.7f} / ${info['ask']:.7f}\n\n"
+        # message += f"24h 高/低: ${info['high']:.7f} / ${info['low']:.7f}\n"
+        # message += f"24h 成交量: {info['volume']:.2f}\n"
+        # message += f"24h 成交额: ${info['quote_volume']:.2f}\n"
+        # message += f"买一/卖一: ${info['bid']:.7f} / ${info['ask']:.7f}\n\n"
     
     # 如果存在上一条消息，则删除它
     if last_message_id:
