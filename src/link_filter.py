@@ -9,8 +9,7 @@ logger = logging.getLogger("TeleGuard.LinkFilter")
 class LinkFilter:
     def __init__(self, db_file):
         self.db = Database(db_file)
-        self.keywords = self.db.get_all_keywords()
-        self.whitelist = self.db.get_all_whitelist()
+        self.load_data_from_file()
 
         self.link_pattern = re.compile(
             r"""
@@ -30,11 +29,12 @@ class LinkFilter:
             re.VERBOSE | re.IGNORECASE,
         )
 
+
     def load_data_from_file(self):
         self.keywords = self.db.get_all_keywords()
         self.whitelist = self.db.get_all_whitelist()
         logger.info(
-            f"Reloaded {len(self.keywords)} keywords and {len(self.whitelist)} whitelist entries"
+            f"Loaded {len(self.keywords)} keywords and {len(self.whitelist)} whitelist entries from database"
         )
 
     def normalize_link(self, link):

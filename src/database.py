@@ -1,54 +1,37 @@
 import sqlite3
 import logging
+import os
 
 logger = logging.getLogger(__name__)
-
 
 class Database:
     def __init__(self, db_file):
         self.db_file = db_file
-        self.conn = None
+        os.makedirs(os.path.dirname(db_file), exist_ok=True)
         self.create_tables()
 
     def create_tables(self):
-        try:
-            self.conn = sqlite3.connect(self.db_file)
-            cursor = self.conn.cursor()
-            cursor.execute(
-                """
+        with sqlite3.connect(self.db_file) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS keywords
                 (id INTEGER PRIMARY KEY, keyword TEXT UNIQUE)
-            """
-            )
-            cursor.execute(
-                """
+            ''')
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS whitelist
                 (id INTEGER PRIMARY KEY, domain TEXT UNIQUE)
-            """
-            )
-            self.conn.commit()
-        except sqlite3.Error as e:
-            logger.error(f"Database error: {e}")
-        finally:
-            if self.conn:
-                self.conn.close()
+            ''')
+            conn.commit()
 
     def execute_query(self, query, params=None):
-        try:
-            self.conn = sqlite3.connect(self.db_file)
-            cursor = self.conn.cursor()
+        with sqlite3.connect(self.db_file) as conn:
+            cursor = conn.cursor()
             if params:
                 cursor.execute(query, params)
             else:
                 cursor.execute(query)
-            self.conn.commit()
-            return cursor
-        except sqlite3.Error as e:
-            logger.error(f"Query execution error: {e}")
-            return None
-        finally:
-            if self.conn:
-                self.conn.close()
+            conn.commit()
+            return cursor.fetchall()
 
     def add_keyword(self, keyword):
         query = "INSERT OR IGNORE INTO keywords (keyword) VALUES (?)"
@@ -60,13 +43,12 @@ class Database:
 
     def get_all_keywords(self):
         query = "SELECT keyword FROM keywords"
-        cursor = self.execute_query(query)
-        return [row[0] for row in cursor] if cursor else []
+        results = self.execute_query(query)
+        return [row[0] for row in results]
 
     def remove_keywords_containing(self, substring):
         query = "DELETE FROM keywords WHERE keyword LIKE ?"
-        cursor = self.execute_query(query, (f"%{substring}%",))
-        return cursor.rowcount if cursor else 0
+        return self.execute_query(query, (f"%{substring}%",))
 
     def add_whitelist(self, domain):
         query = "INSERT OR IGNORE INTO whitelist (domain) VALUES (?)"
@@ -78,5 +60,5 @@ class Database:
 
     def get_all_whitelist(self):
         query = "SELECT domain FROM whitelist"
-        cursor = self.execute_query(query)
-        return [row[0] for row in cursor] if cursor else []
+        results = self.execute_query(query)
+        return [row[0] for row in results]
