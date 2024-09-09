@@ -29,7 +29,6 @@ class LinkFilter:
             re.VERBOSE | re.IGNORECASE,
         )
 
-
     def load_data_from_file(self):
         self.keywords = self.db.get_all_keywords()
         self.whitelist = self.db.get_all_whitelist()
@@ -56,9 +55,10 @@ class LinkFilter:
         if len(parts) > 2:
             domain = '.'.join(parts[-2:])
         return domain.lower()
+
     def is_whitelisted(self, link):
         domain = self.extract_domain(link)
-        result = domain in self.whitelist
+        result = domain in self.db.get_all_whitelist()  # 使用缓存机制
         logger.debug(f"Whitelist check for {link}: {'Passed' if result else 'Failed'}")
         return result
 
@@ -66,7 +66,7 @@ class LinkFilter:
         if self.link_pattern.match(keyword):
             keyword = self.normalize_link(keyword)
         keyword = keyword.lstrip("/")
-        if keyword not in self.keywords:
+        if keyword not in self.db.get_all_keywords():  # 使用缓存机制
             self.db.add_keyword(keyword)
             logger.info(f"New keyword added: {keyword}")
             self.load_data_from_file()
@@ -74,22 +74,20 @@ class LinkFilter:
             logger.debug(f"Keyword already exists: {keyword}")
 
     def remove_keyword(self, keyword):
-        if keyword in self.keywords:
+        if keyword in self.db.get_all_keywords():  # 使用缓存机制
             self.db.remove_keyword(keyword)
             self.load_data_from_file()
             return True
         return False
 
     def remove_keywords_containing(self, substring):
-        removed_keywords = [kw for kw in self.keywords if substring.lower() in kw.lower()]
-        for keyword in removed_keywords:
-            self.db.remove_keyword(keyword)
+        removed_keywords = self.db.remove_keywords_containing(substring)
         self.load_data_from_file()
         return removed_keywords
 
     def should_filter(self, text):
         logger.debug(f"Checking text: {text}")
-        if any(keyword.lower() in text.lower() for keyword in self.keywords):
+        if any(keyword.lower() in text.lower() for keyword in self.db.get_all_keywords()):  # 使用缓存机制
             logger.info(f"Text contains keyword: {text}")
             return True, []
 
@@ -101,7 +99,7 @@ class LinkFilter:
             normalized_link = normalized_link.lstrip("/")
             if not self.is_whitelisted(normalized_link):
                 logger.debug(f"Link not whitelisted: {normalized_link}")
-                if normalized_link not in self.keywords:
+                if normalized_link not in self.db.get_all_keywords():  # 使用缓存机制
                     new_non_whitelisted_links.append(normalized_link)
                     self.add_keyword(normalized_link)
                 else:
@@ -114,15 +112,14 @@ class LinkFilter:
 
     async def handle_keyword_command(self, event, command, args):
         if command == "/list":
-            self.load_data_from_file()
-            keywords = self.keywords
+            keywords = self.db.get_all_keywords()  # 使用缓存机制
             if not keywords:
                 await event.reply("关键词列表为空。")
             else:
                 await send_long_message(event, "当前关键词列表：", keywords)
         elif command == "/add" and args:
             keyword = " ".join(args)
-            if keyword not in self.keywords:
+            if keyword not in self.db.get_all_keywords():  # 使用缓存机制
                 self.add_keyword(keyword)
                 await event.reply(f"关键词 '{keyword}' 已添加。")
             else:
@@ -132,7 +129,7 @@ class LinkFilter:
             if self.remove_keyword(keyword):
                 await event.reply(f"关键词 '{keyword}' 已删除。")
             else:
-                similar_keywords = [k for k in self.keywords if keyword.lower() in k.lower()]
+                similar_keywords = self.db.search_keywords(keyword)  # 使用模糊搜索
                 if similar_keywords:
                     await send_long_message(
                         event,
@@ -150,13 +147,19 @@ class LinkFilter:
                 )
             else:
                 await event.reply(f"没有找到包含 '{substring}' 的关键词。")
+        elif command == "/search" and args:
+            pattern = " ".join(args)
+            search_results = self.db.search_keywords(pattern)
+            if search_results:
+                await send_long_message(event, f"搜索 '{pattern}' 的结果：", search_results)
+            else:
+                await event.reply(f"没有找到匹配 '{pattern}' 的关键词。")
         else:
             await event.reply("无效的命令或参数。")
 
     async def handle_whitelist_command(self, event, command, args):
         if command == "/listwhite":
-            self.load_data_from_file()
-            whitelist = self.whitelist
+            whitelist = self.db.get_all_whitelist()  # 使用缓存机制
             await event.reply(
                 "白名单域名列表：\n" + "\n".join(whitelist)
                 if whitelist
@@ -164,17 +167,15 @@ class LinkFilter:
             )
         elif command == "/addwhite" and args:
             domain = args[0].lower()
-            if domain not in self.whitelist:
+            if domain not in self.db.get_all_whitelist():  # 使用缓存机制
                 self.db.add_whitelist(domain)
-                self.load_data_from_file()
                 await event.reply(f"域名 '{domain}' 已添加到白名单。")
             else:
                 await event.reply(f"域名 '{domain}' 已在白名单中。")
         elif command == "/delwhite" and args:
             domain = args[0].lower()
-            if domain in self.whitelist:
+            if domain in self.db.get_all_whitelist():  # 使用缓存机制
                 self.db.remove_whitelist(domain)
-                self.load_data_from_file()
                 await event.reply(f"域名 '{domain}' 已从白名单中删除。")
             else:
                 await event.reply(f"域名 '{domain}' 不在白名单中。")
