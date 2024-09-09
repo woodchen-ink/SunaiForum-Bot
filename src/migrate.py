@@ -19,22 +19,21 @@ def migrate_data(json_file, db_file):
 
         # 读取 JSON 文件
         with open(json_file, 'r') as f:
-            data = json.load(f)
+            keywords = json.load(f)
         logger.info(f"JSON file loaded: {json_file}")
 
+        if not isinstance(keywords, list):
+            raise ValueError(f"Expected a list in JSON file, but got {type(keywords)}")
+
         # 迁移关键词
-        keywords = data.get('keywords', [])
         for keyword in keywords:
             db.add_keyword(keyword)
-        logger.info(f"Migrated {len(keywords)} keywords")
+        
+        logger.info(f"Migration complete. Migrated {len(keywords)} keywords.")
 
-        # 迁移白名单
-        whitelist = data.get('whitelist', [])
-        for domain in whitelist:
-            db.add_whitelist(domain)
-        logger.info(f"Migrated {len(whitelist)} whitelist entries")
-
-        logger.info(f"Migration complete. Keywords: {len(keywords)}, Whitelist: {len(whitelist)}")
+        # 验证迁移
+        migrated_keywords = db.get_all_keywords()
+        logger.info(f"Verified {len(migrated_keywords)} keywords in the database.")
 
     except Exception as e:
         logger.error(f"An error occurred during migration: {str(e)}")
