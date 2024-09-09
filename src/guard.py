@@ -8,13 +8,10 @@ import time
 from link_filter import LinkFilter
 from bot_commands import register_commands
 
-
-
 # 环境变量
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 ADMIN_ID = int(os.environ.get('ADMIN_ID'))
-KEYWORDS_FILE = '/app/data/keywords.json'
-WHITELIST_FILE = '/app/data/whitelist.json'
+DB_FILE = '/app/data/q58.db'  # 新的数据库文件路径
 
 # 设置日志
 DEBUG_MODE = os.environ.get('DEBUG_MODE', 'False').lower() == 'true'
@@ -30,7 +27,7 @@ link_filter_logger.setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
 logging.getLogger('telethon').setLevel(logging.WARNING)
 
 # 创建 LinkFilter 实例
-link_filter = LinkFilter(KEYWORDS_FILE, WHITELIST_FILE)
+link_filter = LinkFilter(DB_FILE)
 
 class RateLimiter:
     def __init__(self, max_calls, period):
@@ -73,7 +70,6 @@ async def process_message(event, client):
         if new_links:
             logger.info(f"New non-whitelisted links found: {new_links}")
 
-
 async def message_handler(event, link_filter, rate_limiter):
     if not event.is_private or event.sender_id != ADMIN_ID:
         async with rate_limiter:
@@ -94,6 +90,7 @@ async def command_handler(event, link_filter):
         
         if event.raw_text.startswith(('/add', '/delete', '/deletecontaining','/list', '/addwhite', '/delwhite', '/listwhite')):
             link_filter.load_data_from_file()
+
 async def start_bot():
     async with TelegramClient('bot', api_id=6, api_hash='eb06d4abfb49dc3eeb1aeb98ae0f581e') as client:
         await client.start(bot_token=BOT_TOKEN)

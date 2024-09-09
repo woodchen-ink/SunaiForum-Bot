@@ -3,4 +3,3 @@ ccxt
 pyTelegramBotAPI
 schedule
 pytz
-tldextract
