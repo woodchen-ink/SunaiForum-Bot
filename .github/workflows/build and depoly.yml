@@ -29,10 +29,14 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Build for amd64
-        run: CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o main-amd64 .
-
+        run: |
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -tags sqlite_omit_load_extension -o main-amd64 .
+          ldd main-amd64 || echo "ldd not available"
+        
       - name: Build for arm64
-        run: CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc go build -o main-arm64 .
+        run: |
+          CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc go build -tags sqlite_omit_load_extension -o main-arm64 .
+          aarch64-linux-gnu-readelf -d main-arm64 || echo "readelf not available"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

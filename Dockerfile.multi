@@ -21,6 +21,10 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
         mv main-arm64 main && rm main-amd64; \
     fi
 
+# 添加调试信息
+RUN ls -l
+RUN file main
+RUN ldd main || echo "ldd not available"
 # 设置执行权限
 RUN chmod +x main
 
