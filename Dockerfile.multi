@@ -1,19 +1,12 @@
-# 使用轻量级的基础镜像
 FROM alpine:latest
 
-# 安装 ca-certificates，通常需要用于 HTTPS
-RUN apk --no-cache add ca-certificates
+# 安装必要的包
+RUN apk --no-cache add ca-certificates tzdata
 
-# 设置时区
-ENV TZ=Asia/Singapore
-
-# 创建工作目录
 WORKDIR /root/
 
-# 复制编译好的可执行文件
 COPY main-amd64 main-arm64 ./
 
-# 使用 TARGETARCH 参数来选择正确的二进制文件
 ARG TARGETARCH
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
         mv main-amd64 main && rm main-arm64; \
@@ -23,10 +16,9 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
 
 # 添加调试信息
 RUN ls -l
-RUN file main
-RUN ldd main || echo "ldd not available"
-# 设置执行权限
 RUN chmod +x main
 
-# 运行应用
+# 尝试运行程序并捕获可能的错误信息
+RUN ./main || (echo "Error running main: $?" && ldd main 2>&1 || echo "ldd not available")
+
 CMD ["./main"]
