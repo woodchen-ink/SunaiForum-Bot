@@ -14,7 +14,6 @@ import (
 )
 
 var (
-	botToken  string
 	adminID   int64
 	dbFile    string
 	debugMode bool
@@ -151,7 +150,11 @@ func StartBot() error {
 		return fmt.Errorf("error registering commands: %w", err)
 	}
 
-	linkFilter := core.NewLinkFilter(dbFile)
+	linkFilter, err := core.NewLinkFilter(dbFile)
+	if err != nil {
+		log.Fatalf("Failed to create LinkFilter: %v", err)
+	}
+
 	rateLimiter := NewRateLimiter(10, time.Second)
 
 	u := tgbotapi.NewUpdate(0)

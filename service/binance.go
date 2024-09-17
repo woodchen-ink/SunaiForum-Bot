@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -55,27 +56,28 @@ func getTickerInfo(symbol string) (tickerInfo, error) {
 	client := binance.NewClient("", "")
 
 	// 获取当前价格
-	ticker, err := client.NewListPricesService().Symbol(symbol).Do(binance.NewContext())
+	ticker, err := client.NewListPricesService().Symbol(symbol).Do(context.Background())
 	if err != nil {
 		return tickerInfo{}, err
 	}
 	if len(ticker) == 0 {
 		return tickerInfo{}, fmt.Errorf("no ticker found for symbol %s", symbol)
 	}
-	last, err := ticker[0].Price.Float64()
+	// 在 getTickerInfo 函数中
+	last, err := strconv.ParseFloat(ticker[0].Price, 64)
 	if err != nil {
 		return tickerInfo{}, err
 	}
 
 	// 获取24小时价格变化
-	stats, err := client.NewListPriceChangeStatsService().Symbol(symbol).Do(binance.NewContext())
+	stats, err := client.NewListPriceChangeStatsService().Symbol(symbol).Do(context.Background())
 	if err != nil {
 		return tickerInfo{}, err
 	}
 	if len(stats) == 0 {
 		return tickerInfo{}, fmt.Errorf("no price change stats found for symbol %s", symbol)
 	}
-	changePercent, err := stats[0].PriceChangePercent.Float64()
+	changePercent, err := strconv.ParseFloat(stats[0].PriceChangePercent, 64)
 	if err != nil {
 		return tickerInfo{}, err
 	}
