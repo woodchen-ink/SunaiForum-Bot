@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 type Database struct {
@@ -21,7 +21,7 @@ type Database struct {
 
 func NewDatabase(dbFile string) (*Database, error) {
 	os.MkdirAll(filepath.Dir(dbFile), os.ModePerm)
-	db, err := sql.Open("sqlite3", dbFile)
+	db, err := sql.Open("sqlite", dbFile)
 	if err != nil {
 		return nil, err
 	}
@@ -41,12 +41,11 @@ func NewDatabase(dbFile string) (*Database, error) {
 func (d *Database) createTables() error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS keywords
-		 (id INTEGER PRIMARY KEY, keyword TEXT UNIQUE)`,
+			 (id INTEGER PRIMARY KEY, keyword TEXT UNIQUE)`,
 		`CREATE INDEX IF NOT EXISTS idx_keyword ON keywords(keyword)`,
 		`CREATE TABLE IF NOT EXISTS whitelist
-		 (id INTEGER PRIMARY KEY, domain TEXT UNIQUE)`,
+			 (id INTEGER PRIMARY KEY, domain TEXT UNIQUE)`,
 		`CREATE INDEX IF NOT EXISTS idx_domain ON whitelist(domain)`,
-		`CREATE VIRTUAL TABLE IF NOT EXISTS keywords_fts USING fts5(keyword)`,
 	}
 
 	for _, query := range queries {
@@ -83,20 +82,12 @@ func (d *Database) AddKeyword(keyword string) error {
 	if err != nil {
 		return err
 	}
-	_, err = d.db.Exec("INSERT OR IGNORE INTO keywords_fts (keyword) VALUES (?)", keyword)
-	if err != nil {
-		return err
-	}
 	d.invalidateCache()
 	return nil
 }
 
 func (d *Database) RemoveKeyword(keyword string) error {
 	_, err := d.db.Exec("DELETE FROM keywords WHERE keyword = ?", keyword)
-	if err != nil {
-		return err
-	}
-	_, err = d.db.Exec("DELETE FROM keywords_fts WHERE keyword = ?", keyword)
 	if err != nil {
 		return err
 	}
@@ -143,12 +134,6 @@ func (d *Database) RemoveKeywordsContaining(substring string) ([]string, error) 
 		return nil, err
 	}
 
-	// 从 FTS 表中也删除这些关键词
-	_, err = d.db.Exec("DELETE FROM keywords_fts WHERE keyword LIKE ?", "%"+substring+"%")
-	if err != nil {
-		return nil, err
-	}
-
 	d.invalidateCache()
 	return removedKeywords, nil
 }
@@ -188,7 +173,7 @@ func (d *Database) GetAllWhitelist() ([]string, error) {
 }
 
 func (d *Database) SearchKeywords(pattern string) ([]string, error) {
-	return d.executeQuery("SELECT keyword FROM keywords_fts WHERE keyword MATCH ?", pattern)
+	return d.executeQuery("SELECT keyword FROM keywords WHERE keyword LIKE ?", "%"+pattern+"%")
 }
 
 func (d *Database) KeywordExists(keyword string) (bool, error) {
