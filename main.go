@@ -25,12 +25,7 @@ func init() {
 }
 
 func setTimeZone() {
-	loc, err := time.LoadLocation("Asia/Singapore")
-	if err != nil {
-		log.Printf("Error loading time zone 'Asia/Singapore': %v", err)
-		log.Println("Falling back to UTC")
-		loc = time.UTC
-	}
+	loc := time.FixedZone("Asia/Singapore", 8*60*60)
 	time.Local = loc
 }
 

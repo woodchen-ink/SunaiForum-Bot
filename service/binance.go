@@ -27,10 +27,6 @@ func init() {
 	botToken = os.Getenv("BOT_TOKEN")
 	chatID = mustParseInt64(os.Getenv("CHAT_ID"))
 	symbols = strings.Split(os.Getenv("SYMBOLS"), ",")
-	singaporeTZ, err = time.LoadLocation("Asia/Singapore")
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	bot, err = tgbotapi.NewBotAPI(botToken)
 	if err != nil {
