@@ -7,7 +7,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-func RegisterCommands(bot *tgbotapi.BotAPI, adminID int64) error {
+func RegisterCommands(bot *tgbotapi.BotAPI) error {
 	commands := []tgbotapi.BotCommand{
 		{Command: "add", Description: "添加新的关键词"},
 		{Command: "delete", Description: "删除现有的关键词"},
@@ -18,10 +18,11 @@ func RegisterCommands(bot *tgbotapi.BotAPI, adminID int64) error {
 		{Command: "listwhite", Description: "列出白名单域名"},
 	}
 
-	scope := tgbotapi.NewBotCommandScopeChatAdministrators(adminID)
-
 	config := tgbotapi.NewSetMyCommands(commands...)
-	config.Scope = &scope    // 注意这里使用 &scope 来获取指针
+
+	// 不设置 Scope，这将使命令对所有用户可见
+	// config.Scope = nil
+
 	config.LanguageCode = "" // 空字符串表示默认语言
 
 	_, err := bot.Request(config)

@@ -26,7 +26,12 @@ func init() {
 	var err error
 	botToken = os.Getenv("BOT_TOKEN")
 	chatID = mustParseInt64(os.Getenv("CHAT_ID"))
-	symbols = strings.Split(os.Getenv("SYMBOLS"), ",")
+
+	symbolsRaw := strings.Split(os.Getenv("SYMBOLS"), ",")
+	symbols = make([]string, len(symbolsRaw))
+	for i, s := range symbolsRaw {
+		symbols[i] = strings.ReplaceAll(s, "/", "")
+	}
 
 	// 初始化 singaporeTZ
 	singaporeTZ = time.FixedZone("Asia/Singapore", 8*60*60) // UTC+8

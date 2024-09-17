@@ -106,7 +106,25 @@ func messageHandler(bot *tgbotapi.BotAPI, update tgbotapi.Update, linkFilter *co
 		return
 	}
 
-	if update.Message.Chat.Type != "private" || update.Message.From.ID != adminID {
+	// 检查是否是管理员发送的私聊消息
+	if update.Message.Chat.Type == "private" && update.Message.From.ID == adminID {
+		command := update.Message.Command()
+		args := update.Message.CommandArguments()
+
+		switch command {
+		case "add", "delete", "list", "deletecontaining":
+			linkFilter.HandleKeywordCommand(bot, update.Message, command, args)
+		case "addwhite", "delwhite", "listwhite":
+			linkFilter.HandleWhitelistCommand(bot, update.Message, command, args)
+		default:
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "未知命令")
+			bot.Send(msg)
+		}
+		return
+	}
+
+	// 处理非管理员消息或群组消息
+	if update.Message.Chat.Type != "private" {
 		if rateLimiter.Allow() {
 			processMessage(bot, update.Message, linkFilter)
 		}
@@ -145,7 +163,7 @@ func StartBot() error {
 
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
-	err = core.RegisterCommands(bot, 0)
+	err = core.RegisterCommands(bot)
 	if err != nil {
 		return fmt.Errorf("error registering commands: %w", err)
 	}
