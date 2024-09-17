@@ -24,10 +24,10 @@ jobs:
           go-version: '1.22'  # 使用你项目需要的 Go 版本
 
       - name: Build for amd64
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o main-amd64 .
+        run: CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o main-amd64 .
 
       - name: Build for arm64
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o main-arm64 .
+        run: CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -o main-arm64 .
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

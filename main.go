@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/woodchen-ink/Q58Bot/service"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 var (
@@ -36,47 +34,6 @@ func initializeVariables() {
 	ADMIN_ID, err = strconv.ParseInt(adminIDStr, 10, 64)
 	if err != nil {
 		log.Fatalf("Invalid ADMIN_ID: %v", err)
-	}
-}
-
-func setupBot() {
-	bot, err := tgbotapi.NewBotAPI(BOT_TOKEN)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	bot.Debug = true
-
-	log.Printf("Authorized on account %s", bot.Self.UserName)
-
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
-
-	updates := bot.GetUpdatesChan(u)
-
-	for update := range updates {
-		if update.Message == nil {
-			continue
-		}
-
-		if update.Message.Chat.ID != ADMIN_ID {
-			continue
-		}
-
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "")
-
-		switch update.Message.Command() {
-		case "start":
-			msg.Text = "Hello! I'm your bot."
-		case "help":
-			msg.Text = "I can help you with various tasks."
-		default:
-			msg.Text = "I don't know that command"
-		}
-
-		if _, err := bot.Send(msg); err != nil {
-			log.Panic(err)
-		}
 	}
 }
 
@@ -110,8 +67,7 @@ func try(fn func(), name string) {
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	// 使用 goroutines 运行 bot、guard 和 binance 服务
-	go setupBot()
+	// 使用 goroutines 运行 guard 和 binance 服务
 	go runGuard()
 	go runBinance()
 
