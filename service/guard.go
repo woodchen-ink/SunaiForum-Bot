@@ -1,0 +1,193 @@
+package service
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"strconv"
+	"sync"
+	"time"
+
+	"your-project-name/core"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
+
+var (
+	botToken  string
+	adminID   int64
+	dbFile    string
+	debugMode bool
+)
+
+func init() {
+	botToken = os.Getenv("BOT_TOKEN")
+	adminIDStr := os.Getenv("ADMIN_ID")
+	var err error
+	adminID, err = strconv.ParseInt(adminIDStr, 10, 64)
+	if err != nil {
+		log.Fatalf("Invalid ADMIN_ID: %v", err)
+	}
+	dbFile = "/app/data/q58.db" // 新的数据库文件路径
+	debugMode = os.Getenv("DEBUG_MODE") == "true"
+}
+
+type RateLimiter struct {
+	mu       sync.Mutex
+	maxCalls int
+	period   time.Duration
+	calls    []time.Time
+}
+
+func NewRateLimiter(maxCalls int, period time.Duration) *RateLimiter {
+	return &RateLimiter{
+		maxCalls: maxCalls,
+		period:   period,
+		calls:    make([]time.Time, 0, maxCalls),
+	}
+}
+
+func (r *RateLimiter) Allow() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	now := time.Now()
+	if len(r.calls) < r.maxCalls {
+		r.calls = append(r.calls, now)
+		return true
+	}
+
+	if now.Sub(r.calls[0]) >= r.period {
+		r.calls = append(r.calls[1:], now)
+		return true
+	}
+
+	return false
+}
+
+func deleteMessageAfterDelay(bot *tgbotapi.BotAPI, chatID int64, messageID int, delay time.Duration) {
+	time.Sleep(delay)
+	deleteMsg := tgbotapi.NewDeleteMessage(chatID, messageID)
+	_, err := bot.Request(deleteMsg)
+	if err != nil {
+		log.Printf("Failed to delete message: %v", err)
+	}
+}
+
+func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter *core.LinkFilter) {
+	if message.Chat.Type != "private" {
+		log.Printf("Processing message: %s", message.Text)
+		shouldFilter, newLinks := linkFilter.ShouldFilter(message.Text)
+		if shouldFilter {
+			log.Printf("Message should be filtered: %s", message.Text)
+			if message.From.ID != adminID {
+				deleteMsg := tgbotapi.NewDeleteMessage(message.Chat.ID, message.MessageID)
+				_, err := bot.Request(deleteMsg)
+				if err != nil {
+					log.Printf("Failed to delete message: %v", err)
+				}
+				notification := tgbotapi.NewMessage(message.Chat.ID, "已撤回该消息。注:一个链接不能发两次.")
+				sent, err := bot.Send(notification)
+				if err != nil {
+					log.Printf("Failed to send notification: %v", err)
+				} else {
+					go deleteMessageAfterDelay(bot, message.Chat.ID, sent.MessageID, 3*time.Minute)
+				}
+			}
+			return
+		}
+		if len(newLinks) > 0 {
+			log.Printf("New non-whitelisted links found: %v", newLinks)
+		}
+	}
+}
+
+func messageHandler(bot *tgbotapi.BotAPI, update tgbotapi.Update, linkFilter *core.LinkFilter, rateLimiter *RateLimiter) {
+	if update.Message == nil {
+		return
+	}
+
+	if update.Message.Chat.Type != "private" || update.Message.From.ID != adminID {
+		if rateLimiter.Allow() {
+			processMessage(bot, update.Message, linkFilter)
+		}
+	}
+}
+
+func commandHandler(bot *tgbotapi.BotAPI, update tgbotapi.Update, linkFilter *core.LinkFilter) {
+	if update.Message == nil || update.Message.Chat.Type != "private" || update.Message.From.ID != adminID {
+		return
+	}
+
+	linkFilter.LoadDataFromFile()
+
+	command := update.Message.Command()
+	args := update.Message.CommandArguments()
+
+	switch command {
+	case "add", "delete", "list", "deletecontaining":
+		linkFilter.HandleKeywordCommand(bot, update.Message, command, args)
+	case "addwhite", "delwhite", "listwhite":
+		linkFilter.HandleWhitelistCommand(bot, update.Message, command, args)
+	}
+
+	if command == "add" || command == "delete" || command == "deletecontaining" || command == "list" || command == "addwhite" || command == "delwhite" || command == "listwhite" {
+		linkFilter.LoadDataFromFile()
+	}
+}
+
+func StartBot() error {
+	bot, err := tgbotapi.NewBotAPI(botToken)
+	if err != nil {
+		return fmt.Errorf("failed to create bot: %w", err)
+	}
+
+	bot.Debug = debugMode
+
+	log.Printf("Authorized on account %s", bot.Self.UserName)
+
+	err = core.RegisterCommands(bot, adminID)
+	if err != nil {
+		return fmt.Errorf("error registering commands: %w", err)
+	}
+
+	linkFilter := core.NewLinkFilter(dbFile)
+	rateLimiter := NewRateLimiter(10, time.Second)
+
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+
+	updates := bot.GetUpdatesChan(u)
+
+	for update := range updates {
+		go messageHandler(bot, update, linkFilter, rateLimiter)
+		go commandHandler(bot, update, linkFilter)
+	}
+
+	return nil // 如果 bot 正常退出，返回 nil
+}
+
+func RunGuard() {
+	baseDelay := time.Second
+	maxDelay := 5 * time.Minute
+	delay := baseDelay
+
+	for {
+		err := StartBot()
+		if err != nil {
+			log.Printf("Bot encountered an error: %v", err)
+			log.Printf("Attempting to restart in %v...", delay)
+			time.Sleep(delay)
+
+			// 实现指数退避
+			delay *= 2
+			if delay > maxDelay {
+				delay = maxDelay
+			}
+		} else {
+			// 如果 bot 正常退出，重置延迟
+			delay = baseDelay
+			log.Println("Bot disconnected. Attempting to restart immediately...")
+		}
+	}
+}
