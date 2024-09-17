@@ -13,7 +13,7 @@
 
 1. TeleGuard：一个 Telegram 机器人，用于管理群组中的关键词并自动删除包含这些关键词的消息。
 2. 币安价格更新器：定期获取并发送指定加密货币的价格信息。
-3. 链接拦截：拦截并撤回非白名单域名链接的第二次发送。
+3. 链接拦截：拦截并撤回非白名单域名链接的第二次发送, 这里不去掉查询参数, 但是去掉头部的http协议。
 
 
 这些功能被整合到一个 Docker 容器中，可以同时运行。
@@ -32,6 +32,11 @@
 
 ### 链接拦截
 - 非白名单域名链接, 在发送第二次会被拦截撤回
+
+### 白名单域名
+- 会匹配链接中的域名, 包括二级域名和三级域名
+- 例如，如果白名单中有 "example.com"，它将匹配 "example.com"、"sub.example.com" 和 "sub.sub.example.com"。
+- 同时，如果白名单中有 "sub.example.com"，它将匹配 "sub.example.com" 和 "subsub.sub.example.com"，但不会匹配 "example.com" 或 "othersub.example.com"。
 
 
 ## 安装与配置

@@ -58,6 +58,9 @@ func (lf *LinkFilter) NormalizeLink(link string) string {
 		return link
 	}
 	normalized := fmt.Sprintf("%s%s", parsedURL.Hostname(), parsedURL.EscapedPath())
+	if parsedURL.RawQuery != "" {
+		normalized += "?" + parsedURL.RawQuery
+	}
 	result := strings.TrimSuffix(normalized, "/")
 	logger.Printf("Normalized link: %s -> %s", link, result)
 	return result
@@ -69,19 +72,30 @@ func (lf *LinkFilter) ExtractDomain(urlStr string) string {
 		logger.Printf("Error parsing URL: %v", err)
 		return urlStr
 	}
-	domain := parsedURL.Hostname()
-	parts := strings.Split(domain, ".")
-	if len(parts) > 2 {
-		domain = strings.Join(parts[len(parts)-2:], ".")
-	}
-	return strings.ToLower(domain)
+	return strings.ToLower(parsedURL.Hostname())
 }
 
+func (lf *LinkFilter) domainMatch(domain, whiteDomain string) bool {
+	domainParts := strings.Split(domain, ".")
+	whiteDomainParts := strings.Split(whiteDomain, ".")
+
+	if len(domainParts) < len(whiteDomainParts) {
+		return false
+	}
+
+	for i := 1; i <= len(whiteDomainParts); i++ {
+		if domainParts[len(domainParts)-i] != whiteDomainParts[len(whiteDomainParts)-i] {
+			return false
+		}
+	}
+
+	return true
+}
 func (lf *LinkFilter) IsWhitelisted(link string) bool {
 	domain := lf.ExtractDomain(link)
 	for _, whiteDomain := range lf.whitelist {
-		if domain == whiteDomain {
-			logger.Printf("Whitelist check for %s: Passed", link)
+		if lf.domainMatch(domain, whiteDomain) {
+			logger.Printf("Whitelist check for %s: Passed (matched %s)", link, whiteDomain)
 			return true
 		}
 	}
@@ -142,10 +156,10 @@ func (lf *LinkFilter) ShouldFilter(text string) (bool, []string) {
 
 	links := lf.linkPattern.FindAllString(text, -1)
 	logger.Printf("Found links: %v", links)
+
 	var newNonWhitelistedLinks []string
 	for _, link := range links {
 		normalizedLink := lf.NormalizeLink(link)
-		normalizedLink = strings.TrimPrefix(normalizedLink, "/")
 		if !lf.IsWhitelisted(normalizedLink) {
 			logger.Printf("Link not whitelisted: %s", normalizedLink)
 			found := false
