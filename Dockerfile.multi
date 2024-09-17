@@ -4,6 +4,9 @@ FROM alpine:latest
 # 安装 ca-certificates，通常需要用于 HTTPS
 RUN apk --no-cache add ca-certificates
 
+# 设置时区
+ENV TZ=Asia/Singapore
+
 # 创建工作目录
 WORKDIR /root/
 

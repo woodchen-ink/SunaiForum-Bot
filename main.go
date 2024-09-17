@@ -17,6 +17,24 @@ var (
 )
 
 func init() {
+	// 设置时区
+	setTimeZone()
+
+	// 其他初始化逻辑
+	initializeVariables()
+}
+
+func setTimeZone() {
+	loc, err := time.LoadLocation("Asia/Singapore")
+	if err != nil {
+		log.Printf("Error loading time zone 'Asia/Singapore': %v", err)
+		log.Println("Falling back to UTC")
+		loc = time.UTC
+	}
+	time.Local = loc
+}
+
+func initializeVariables() {
 	BOT_TOKEN = os.Getenv("BOT_TOKEN")
 	adminIDStr := os.Getenv("ADMIN_ID")
 	var err error
