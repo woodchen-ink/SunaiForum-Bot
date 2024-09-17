@@ -33,8 +33,12 @@ func init() {
 		symbols[i] = strings.ReplaceAll(s, "/", "")
 	}
 
-	// 初始化 singaporeTZ
-	singaporeTZ = time.FixedZone("Asia/Singapore", 8*60*60) // UTC+8
+	singaporeTZ, err = time.LoadLocation("Asia/Singapore")
+	if err != nil {
+		log.Printf("Error loading Singapore time zone: %v", err)
+		log.Println("Falling back to UTC+8")
+		singaporeTZ = time.FixedZone("Asia/Singapore", 8*60*60)
+	}
 
 	bot, err = tgbotapi.NewBotAPI(botToken)
 	if err != nil {
@@ -59,7 +63,6 @@ type tickerInfo struct {
 func getTickerInfo(symbol string) (tickerInfo, error) {
 	client := binance.NewClient("", "")
 
-	// 获取当前价格
 	ticker, err := client.NewListPricesService().Symbol(symbol).Do(context.Background())
 	if err != nil {
 		return tickerInfo{}, err
@@ -67,13 +70,11 @@ func getTickerInfo(symbol string) (tickerInfo, error) {
 	if len(ticker) == 0 {
 		return tickerInfo{}, fmt.Errorf("no ticker found for symbol %s", symbol)
 	}
-	// 在 getTickerInfo 函数中
 	last, err := strconv.ParseFloat(ticker[0].Price, 64)
 	if err != nil {
 		return tickerInfo{}, err
 	}
 
-	// 获取24小时价格变化
 	stats, err := client.NewListPriceChangeStatsService().Symbol(symbol).Do(context.Background())
 	if err != nil {
 		return tickerInfo{}, err
@@ -103,13 +104,7 @@ func formatChange(changePercent float64) string {
 }
 
 func sendPriceUpdate() {
-	var now time.Time
-	if singaporeTZ != nil {
-		now = time.Now().In(singaporeTZ)
-	} else {
-		now = time.Now().UTC()
-		log.Println("Warning: singaporeTZ is nil, using UTC")
-	}
+	now := time.Now().In(singaporeTZ)
 	message := fmt.Sprintf("市场更新 - %s (SGT)\n\n", now.Format("2006-01-02 15:04:05"))
 
 	for _, symbol := range symbols {
@@ -147,11 +142,24 @@ func sendPriceUpdate() {
 
 func RunBinance() {
 	log.Println("Starting Binance service...")
-	for {
-		log.Println("Sending price update...")
-		sendPriceUpdate()
 
-		log.Println("Waiting for next update...")
-		time.Sleep(1 * time.Hour)
+	sendPriceUpdate()
+
+	var scheduleNextUpdate func()
+	scheduleNextUpdate = func() {
+		now := time.Now().In(singaporeTZ)
+		nextHour := now.Add(time.Hour).Truncate(time.Hour)
+		duration := nextHour.Sub(now)
+
+		time.AfterFunc(duration, func() {
+			log.Println("Sending hourly price update...")
+			sendPriceUpdate()
+			scheduleNextUpdate()
+		})
 	}
+
+	scheduleNextUpdate()
+
+	// 保持主 goroutine 运行
+	select {}
 }
