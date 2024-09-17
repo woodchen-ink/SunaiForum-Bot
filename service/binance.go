@@ -135,7 +135,7 @@ func sendPriceUpdate() {
 	lastMsgID = sentMsg.MessageID
 }
 
-func Run() {
+func RunBinance() {
 	log.Println("Sending initial price update...")
 	sendPriceUpdate()
 

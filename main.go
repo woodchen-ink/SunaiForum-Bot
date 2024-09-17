@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	binance "github.com/woodchen-ink/Q58Bot/service"
+	"github.com/woodchen-ink/Q58Bot/service"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -70,7 +70,7 @@ func setupBot() {
 func runGuard() {
 	for {
 		try(func() {
-			guard.Run()
+			service.RunGuard()
 		}, "Guard")
 	}
 }
@@ -78,7 +78,7 @@ func runGuard() {
 func runBinance() {
 	for {
 		try(func() {
-			binance.Run()
+			service.RunBinance()
 		}, "Binance")
 	}
 }
