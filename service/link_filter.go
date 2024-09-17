@@ -1,4 +1,4 @@
-package core
+package service
 
 import (
 	"fmt"
@@ -7,20 +7,22 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/woodchen-ink/Q58Bot/core"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 var logger = log.New(log.Writer(), "LinkFilter: ", log.Ldate|log.Ltime|log.Lshortfile)
 
 type LinkFilter struct {
-	db          *Database
+	db          *core.Database
 	keywords    []string
 	whitelist   []string
 	linkPattern *regexp.Regexp
 }
 
 func NewLinkFilter(dbFile string) (*LinkFilter, error) {
-	db, err := NewDatabase(dbFile)
+	db, err := core.NewDatabase(dbFile)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +195,7 @@ func (lf *LinkFilter) HandleKeywordCommand(bot *tgbotapi.BotAPI, message *tgbota
 		if len(keywords) == 0 {
 			bot.Send(tgbotapi.NewMessage(message.Chat.ID, "关键词列表为空。"))
 		} else {
-			SendLongMessage(bot, message.Chat.ID, "当前关键词列表：", keywords)
+			core.SendLongMessage(bot, message.Chat.ID, "当前关键词列表：", keywords)
 		}
 	case "add":
 		if args != "" {
@@ -227,7 +229,7 @@ func (lf *LinkFilter) HandleKeywordCommand(bot *tgbotapi.BotAPI, message *tgbota
 					return
 				}
 				if len(similarKeywords) > 0 {
-					SendLongMessage(bot, message.Chat.ID, fmt.Sprintf("未找到精确匹配的关键词 '%s'。\n\n以下是相似的关键词：", keyword), similarKeywords)
+					core.SendLongMessage(bot, message.Chat.ID, fmt.Sprintf("未找到精确匹配的关键词 '%s'。\n\n以下是相似的关键词：", keyword), similarKeywords)
 				} else {
 					bot.Send(tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("关键词 '%s' 不存在。", keyword)))
 				}
@@ -242,7 +244,7 @@ func (lf *LinkFilter) HandleKeywordCommand(bot *tgbotapi.BotAPI, message *tgbota
 				return
 			}
 			if len(removedKeywords) > 0 {
-				SendLongMessage(bot, message.Chat.ID, fmt.Sprintf("已删除包含 '%s' 的以下关键词：", substring), removedKeywords)
+				core.SendLongMessage(bot, message.Chat.ID, fmt.Sprintf("已删除包含 '%s' 的以下关键词：", substring), removedKeywords)
 			} else {
 				bot.Send(tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("没有找到包含 '%s' 的关键词。", substring)))
 			}

@@ -3,8 +3,6 @@ package service
 import (
 	"fmt"
 	"log"
-	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -12,24 +10,6 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
-
-var (
-	adminID   int64
-	dbFile    string
-	debugMode bool
-)
-
-func init() {
-	botToken = os.Getenv("BOT_TOKEN")
-	adminIDStr := os.Getenv("ADMIN_ID")
-	var err error
-	adminID, err = strconv.ParseInt(adminIDStr, 10, 64)
-	if err != nil {
-		log.Fatalf("Invalid ADMIN_ID: %v", err)
-	}
-	dbFile = "/app/data/q58.db" // 新的数据库文件路径
-	debugMode = os.Getenv("DEBUG_MODE") == "true"
-}
 
 type RateLimiter struct {
 	mu       sync.Mutex
@@ -73,36 +53,31 @@ func deleteMessageAfterDelay(bot *tgbotapi.BotAPI, chatID int64, messageID int, 
 	}
 }
 
-func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter *core.LinkFilter) {
-	if message.Chat.Type != "private" {
-		log.Printf("Processing message: %s", message.Text)
-		shouldFilter, newLinks := linkFilter.ShouldFilter(message.Text)
-		if shouldFilter {
-			log.Printf("Message should be filtered: %s", message.Text)
-			if message.From.ID != adminID {
-				deleteMsg := tgbotapi.NewDeleteMessage(message.Chat.ID, message.MessageID)
-				_, err := bot.Request(deleteMsg)
-				if err != nil {
-					log.Printf("Failed to delete message: %v", err)
-				}
-				notification := tgbotapi.NewMessage(message.Chat.ID, "已撤回该消息。注:一个链接不能发两次.")
-				sent, err := bot.Send(notification)
-				if err != nil {
-					log.Printf("Failed to send notification: %v", err)
-				} else {
-					go deleteMessageAfterDelay(bot, message.Chat.ID, sent.MessageID, 3*time.Minute)
-				}
+func RunGuard() {
+	baseDelay := time.Second
+	maxDelay := 5 * time.Minute
+	delay := baseDelay
+
+	for {
+		err := startBot()
+		if err != nil {
+			log.Printf("Bot encountered an error: %v", err)
+			log.Printf("Attempting to restart in %v...", delay)
+			time.Sleep(delay)
+
+			delay *= 2
+			if delay > maxDelay {
+				delay = maxDelay
 			}
-			return
-		}
-		if len(newLinks) > 0 {
-			log.Printf("New non-whitelisted links found: %v", newLinks)
+		} else {
+			delay = baseDelay
+			log.Println("Bot disconnected. Attempting to restart immediately...")
 		}
 	}
 }
 
-func StartBot() error {
-	bot, err := tgbotapi.NewBotAPI(botToken)
+func startBot() error {
+	bot, err := tgbotapi.NewBotAPI(core.BOT_TOKEN)
 	if err != nil {
 		return fmt.Errorf("failed to create bot: %w", err)
 	}
@@ -116,9 +91,9 @@ func StartBot() error {
 		return fmt.Errorf("error registering commands: %w", err)
 	}
 
-	linkFilter, err := core.NewLinkFilter(dbFile)
+	linkFilter, err := NewLinkFilter(dbFile)
 	if err != nil {
-		log.Fatalf("Failed to create LinkFilter: %v", err)
+		return fmt.Errorf("failed to create LinkFilter: %v", err)
 	}
 
 	rateLimiter := NewRateLimiter(10, time.Second)
@@ -134,57 +109,62 @@ func StartBot() error {
 
 	return nil
 }
-func handleUpdate(bot *tgbotapi.BotAPI, update tgbotapi.Update, linkFilter *core.LinkFilter, rateLimiter *RateLimiter) {
+
+func handleUpdate(bot *tgbotapi.BotAPI, update tgbotapi.Update, linkFilter *LinkFilter, rateLimiter *RateLimiter) {
 	if update.Message == nil {
 		return
 	}
 
-	// 检查是否是管理员发送的私聊消息
-	if update.Message.Chat.Type == "private" && update.Message.From.ID == adminID {
-		command := update.Message.Command()
-		args := update.Message.CommandArguments()
-
-		switch command {
-		case "add", "delete", "list", "deletecontaining":
-			linkFilter.HandleKeywordCommand(bot, update.Message, command, args)
-		case "addwhite", "delwhite", "listwhite":
-			linkFilter.HandleWhitelistCommand(bot, update.Message, command, args)
-		default:
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "未知命令")
-			bot.Send(msg)
-		}
+	if update.Message.Chat.Type == "private" && update.Message.From.ID == core.ADMIN_ID {
+		handleAdminCommand(bot, update.Message, linkFilter)
 		return
 	}
 
-	// 处理非管理员消息或群组消息
-	if update.Message.Chat.Type != "private" {
-		if rateLimiter.Allow() {
-			processMessage(bot, update.Message, linkFilter)
-		}
+	if update.Message.Chat.Type != "private" && rateLimiter.Allow() {
+		processMessage(bot, update.Message, linkFilter)
 	}
 }
 
-func RunGuard() {
-	baseDelay := time.Second
-	maxDelay := 5 * time.Minute
-	delay := baseDelay
+func handleAdminCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter *LinkFilter) {
+	command := message.Command()
+	args := message.CommandArguments()
 
-	for {
-		err := StartBot()
-		if err != nil {
-			log.Printf("Bot encountered an error: %v", err)
-			log.Printf("Attempting to restart in %v...", delay)
-			time.Sleep(delay)
-
-			// 实现指数退避
-			delay *= 2
-			if delay > maxDelay {
-				delay = maxDelay
-			}
-		} else {
-			// 如果 bot 正常退出，重置延迟
-			delay = baseDelay
-			log.Println("Bot disconnected. Attempting to restart immediately...")
-		}
+	switch command {
+	case "add", "delete", "list", "deletecontaining":
+		linkFilter.HandleKeywordCommand(bot, message, command, args)
+	case "addwhite", "delwhite", "listwhite":
+		linkFilter.HandleWhitelistCommand(bot, message, command, args)
+	case "prompt":
+		HandlePromptCommand(bot, message)
+	default:
+		bot.Send(tgbotapi.NewMessage(message.Chat.ID, "未知命令"))
 	}
+}
+
+func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter *LinkFilter) {
+	log.Printf("Processing message: %s", message.Text)
+	shouldFilter, newLinks := linkFilter.ShouldFilter(message.Text)
+	if shouldFilter {
+		log.Printf("Message should be filtered: %s", message.Text)
+		if message.From.ID != core.ADMIN_ID {
+			deleteMsg := tgbotapi.NewDeleteMessage(message.Chat.ID, message.MessageID)
+			_, err := bot.Request(deleteMsg)
+			if err != nil {
+				log.Printf("Failed to delete message: %v", err)
+			}
+			notification := tgbotapi.NewMessage(message.Chat.ID, "已撤回该消息。注:一个链接不能发两次.")
+			sent, err := bot.Send(notification)
+			if err != nil {
+				log.Printf("Failed to send notification: %v", err)
+			} else {
+				go deleteMessageAfterDelay(bot, message.Chat.ID, sent.MessageID, 3*time.Minute)
+			}
+		}
+		return
+	}
+	if len(newLinks) > 0 {
+		log.Printf("New non-whitelisted links found: %v", newLinks)
+	}
+
+	CheckAndReplyPrompt(bot, message)
 }
