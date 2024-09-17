@@ -101,58 +101,6 @@ func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter 
 	}
 }
 
-func messageHandler(bot *tgbotapi.BotAPI, update tgbotapi.Update, linkFilter *core.LinkFilter, rateLimiter *RateLimiter) {
-	if update.Message == nil {
-		return
-	}
-
-	// 检查是否是管理员发送的私聊消息
-	if update.Message.Chat.Type == "private" && update.Message.From.ID == adminID {
-		command := update.Message.Command()
-		args := update.Message.CommandArguments()
-
-		switch command {
-		case "add", "delete", "list", "deletecontaining":
-			linkFilter.HandleKeywordCommand(bot, update.Message, command, args)
-		case "addwhite", "delwhite", "listwhite":
-			linkFilter.HandleWhitelistCommand(bot, update.Message, command, args)
-		default:
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "未知命令")
-			bot.Send(msg)
-		}
-		return
-	}
-
-	// 处理非管理员消息或群组消息
-	if update.Message.Chat.Type != "private" {
-		if rateLimiter.Allow() {
-			processMessage(bot, update.Message, linkFilter)
-		}
-	}
-}
-
-func commandHandler(bot *tgbotapi.BotAPI, update tgbotapi.Update, linkFilter *core.LinkFilter) {
-	if update.Message == nil || update.Message.Chat.Type != "private" || update.Message.From.ID != adminID {
-		return
-	}
-
-	linkFilter.LoadDataFromFile()
-
-	command := update.Message.Command()
-	args := update.Message.CommandArguments()
-
-	switch command {
-	case "add", "delete", "list", "deletecontaining":
-		linkFilter.HandleKeywordCommand(bot, update.Message, command, args)
-	case "addwhite", "delwhite", "listwhite":
-		linkFilter.HandleWhitelistCommand(bot, update.Message, command, args)
-	}
-
-	if command == "add" || command == "delete" || command == "deletecontaining" || command == "list" || command == "addwhite" || command == "delwhite" || command == "listwhite" {
-		linkFilter.LoadDataFromFile()
-	}
-}
-
 func StartBot() error {
 	bot, err := tgbotapi.NewBotAPI(botToken)
 	if err != nil {
@@ -181,11 +129,39 @@ func StartBot() error {
 	updates := bot.GetUpdatesChan(u)
 
 	for update := range updates {
-		go messageHandler(bot, update, linkFilter, rateLimiter)
-		go commandHandler(bot, update, linkFilter)
+		go handleUpdate(bot, update, linkFilter, rateLimiter)
 	}
 
-	return nil // 如果 bot 正常退出，返回 nil
+	return nil
+}
+func handleUpdate(bot *tgbotapi.BotAPI, update tgbotapi.Update, linkFilter *core.LinkFilter, rateLimiter *RateLimiter) {
+	if update.Message == nil {
+		return
+	}
+
+	// 检查是否是管理员发送的私聊消息
+	if update.Message.Chat.Type == "private" && update.Message.From.ID == adminID {
+		command := update.Message.Command()
+		args := update.Message.CommandArguments()
+
+		switch command {
+		case "add", "delete", "list", "deletecontaining":
+			linkFilter.HandleKeywordCommand(bot, update.Message, command, args)
+		case "addwhite", "delwhite", "listwhite":
+			linkFilter.HandleWhitelistCommand(bot, update.Message, command, args)
+		default:
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "未知命令")
+			bot.Send(msg)
+		}
+		return
+	}
+
+	// 处理非管理员消息或群组消息
+	if update.Message.Chat.Type != "private" {
+		if rateLimiter.Allow() {
+			processMessage(bot, update.Message, linkFilter)
+		}
+	}
 }
 
 func RunGuard() {

@@ -193,9 +193,9 @@ func (lf *LinkFilter) HandleKeywordCommand(bot *tgbotapi.BotAPI, message *tgbota
 				err = lf.AddKeyword(keyword)
 				if err != nil {
 					bot.Send(tgbotapi.NewMessage(message.Chat.ID, "添加关键词时发生错误。"))
-					return
+				} else {
+					bot.Send(tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("关键词 '%s' 已添加。", keyword)))
 				}
-				bot.Send(tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("关键词 '%s' 已添加。", keyword)))
 			} else {
 				bot.Send(tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("关键词 '%s' 已存在。", keyword)))
 			}
