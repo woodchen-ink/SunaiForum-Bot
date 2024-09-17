@@ -120,17 +120,37 @@ func (d *Database) GetAllKeywords() ([]string, error) {
 	return d.keywordsCache, nil
 }
 
-func (d *Database) RemoveKeywordsContaining(substring string) error {
-	_, err := d.db.Exec("DELETE FROM keywords WHERE keyword LIKE ?", "%"+substring+"%")
+func (d *Database) RemoveKeywordsContaining(substring string) ([]string, error) {
+	// 首先获取要删除的关键词列表
+	rows, err := d.db.Query("SELECT keyword FROM keywords WHERE keyword LIKE ?", "%"+substring+"%")
 	if err != nil {
-		return err
+		return nil, err
 	}
+	defer rows.Close()
+
+	var removedKeywords []string
+	for rows.Next() {
+		var keyword string
+		if err := rows.Scan(&keyword); err != nil {
+			return nil, err
+		}
+		removedKeywords = append(removedKeywords, keyword)
+	}
+
+	// 执行删除操作
+	_, err = d.db.Exec("DELETE FROM keywords WHERE keyword LIKE ?", "%"+substring+"%")
+	if err != nil {
+		return nil, err
+	}
+
+	// 从 FTS 表中也删除这些关键词
 	_, err = d.db.Exec("DELETE FROM keywords_fts WHERE keyword LIKE ?", "%"+substring+"%")
 	if err != nil {
-		return err
+		return nil, err
 	}
+
 	d.invalidateCache()
-	return nil
+	return removedKeywords, nil
 }
 
 func (d *Database) AddWhitelist(domain string) error {
@@ -169,6 +189,24 @@ func (d *Database) GetAllWhitelist() ([]string, error) {
 
 func (d *Database) SearchKeywords(pattern string) ([]string, error) {
 	return d.executeQuery("SELECT keyword FROM keywords_fts WHERE keyword MATCH ?", pattern)
+}
+
+func (d *Database) KeywordExists(keyword string) (bool, error) {
+	var count int
+	err := d.db.QueryRow("SELECT COUNT(*) FROM keywords WHERE keyword = ?", keyword).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (d *Database) WhitelistExists(domain string) (bool, error) {
+	var count int
+	err := d.db.QueryRow("SELECT COUNT(*) FROM whitelist WHERE domain = ?", domain).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (d *Database) invalidateCache() {
