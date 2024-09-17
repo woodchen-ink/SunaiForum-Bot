@@ -145,7 +145,7 @@ func StartBot() error {
 
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
-	err = core.RegisterCommands(bot, adminID)
+	err = core.RegisterCommands(bot, 0)
 	if err != nil {
 		return fmt.Errorf("error registering commands: %w", err)
 	}
