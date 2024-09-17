@@ -143,23 +143,17 @@ func sendPriceUpdate() {
 func RunBinance() {
 	log.Println("Starting Binance service...")
 
+	// 立即发送一次价格更新
 	sendPriceUpdate()
 
-	var scheduleNextUpdate func()
-	scheduleNextUpdate = func() {
-		now := time.Now().In(singaporeTZ)
-		nextHour := now.Add(time.Hour).Truncate(time.Hour)
-		duration := nextHour.Sub(now)
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
 
-		time.AfterFunc(duration, func() {
+	for range ticker.C {
+		now := time.Now().In(singaporeTZ)
+		if now.Minute() == 0 {
 			log.Println("Sending hourly price update...")
 			sendPriceUpdate()
-			scheduleNextUpdate()
-		})
+		}
 	}
-
-	scheduleNextUpdate()
-
-	// 保持主 goroutine 运行
-	select {}
 }

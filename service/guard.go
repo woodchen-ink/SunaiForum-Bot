@@ -147,16 +147,20 @@ func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter 
 	if shouldFilter {
 		log.Printf("Message should be filtered: %s", message.Text)
 		if message.From.ID != core.ADMIN_ID {
+			// 删除原始消息
 			deleteMsg := tgbotapi.NewDeleteMessage(message.Chat.ID, message.MessageID)
 			_, err := bot.Request(deleteMsg)
 			if err != nil {
 				log.Printf("Failed to delete message: %v", err)
 			}
+
+			// 发送提示消息
 			notification := tgbotapi.NewMessage(message.Chat.ID, "已撤回该消息。注:一个链接不能发两次.")
 			sent, err := bot.Send(notification)
 			if err != nil {
 				log.Printf("Failed to send notification: %v", err)
 			} else {
+				// 3分钟后删除提示消息
 				go deleteMessageAfterDelay(bot, message.Chat.ID, sent.MessageID, 3*time.Minute)
 			}
 		}
@@ -166,5 +170,16 @@ func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter 
 		log.Printf("New non-whitelisted links found: %v", newLinks)
 	}
 
-	CheckAndReplyPrompt(bot, message)
+	// 检查并回复提示词
+	if reply, found := GetPromptReply(message.Text); found {
+		replyMsg := tgbotapi.NewMessage(message.Chat.ID, reply)
+		replyMsg.ReplyToMessageID = message.MessageID
+		sent, err := bot.Send(replyMsg)
+		if err != nil {
+			log.Printf("Failed to send prompt reply: %v", err)
+		} else {
+			// 3分钟后删除提示词回复
+			go deleteMessageAfterDelay(bot, message.Chat.ID, sent.MessageID, 3*time.Minute)
+		}
+	}
 }
