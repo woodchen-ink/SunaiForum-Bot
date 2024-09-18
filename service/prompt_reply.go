@@ -4,28 +4,21 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"sync"
 
 	"github.com/woodchen-ink/Q58Bot/core"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-var (
-	promptReplies = make(map[string]string)
-	promptMutex   sync.RWMutex
-	db            *core.Database
-)
+var db *core.Database
 
-func InitPromptService(database *core.Database) error {
-	db = database
-	return loadPromptRepliesFromDB()
-}
-
-func loadPromptRepliesFromDB() error {
+func InitPromptService() error {
 	var err error
-	promptReplies, err = db.GetAllPromptReplies()
-	return err
+	db, err = core.NewDatabase()
+	if err != nil {
+		return fmt.Errorf("failed to initialize database: %v", err)
+	}
+	return nil
 }
 
 func SetPromptReply(prompt, reply string) error {
@@ -52,8 +45,11 @@ func GetPromptReply(message string) (string, bool) {
 }
 
 func ListPromptReplies() string {
-	promptMutex.RLock()
-	defer promptMutex.RUnlock()
+	promptReplies, err := db.GetAllPromptReplies()
+	if err != nil {
+		log.Printf("Error getting prompt replies: %v", err)
+		return "获取提示词回复时发生错误。"
+	}
 
 	if len(promptReplies) == 0 {
 		return "目前没有设置任何提示词回复。"

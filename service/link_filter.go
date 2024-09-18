@@ -21,8 +21,8 @@ type LinkFilter struct {
 	linkPattern *regexp.Regexp
 }
 
-func NewLinkFilter(dbFile string) (*LinkFilter, error) {
-	db, err := core.NewDatabase(dbFile)
+func NewLinkFilter() (*LinkFilter, error) {
+	db, err := core.NewDatabase()
 	if err != nil {
 		return nil, err
 	}
