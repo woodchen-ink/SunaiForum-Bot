@@ -82,7 +82,7 @@ func startBot() error {
 		return fmt.Errorf("failed to create bot: %w", err)
 	}
 
-	bot.Debug = debugMode
+	bot.Debug = core.DEBUG_MODE
 
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
@@ -91,7 +91,7 @@ func startBot() error {
 		return fmt.Errorf("error registering commands: %w", err)
 	}
 
-	linkFilter, err := NewLinkFilter(dbFile)
+	linkFilter, err := NewLinkFilter(core.DB_FILE)
 	if err != nil {
 		return fmt.Errorf("failed to create LinkFilter: %v", err)
 	}

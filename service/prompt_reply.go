@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 
@@ -13,23 +14,35 @@ import (
 var (
 	promptReplies = make(map[string]string)
 	promptMutex   sync.RWMutex
+	db            *core.Database
 )
 
-func SetPromptReply(prompt, reply string) {
-	promptMutex.Lock()
-	defer promptMutex.Unlock()
-	promptReplies[strings.ToLower(prompt)] = reply
+func InitPromptService(database *core.Database) error {
+	db = database
+	return loadPromptRepliesFromDB()
 }
 
-func DeletePromptReply(prompt string) {
-	promptMutex.Lock()
-	defer promptMutex.Unlock()
-	delete(promptReplies, strings.ToLower(prompt))
+func loadPromptRepliesFromDB() error {
+	var err error
+	promptReplies, err = db.GetAllPromptReplies()
+	return err
+}
+
+func SetPromptReply(prompt, reply string) error {
+	return db.AddPromptReply(prompt, reply)
+}
+
+func DeletePromptReply(prompt string) error {
+	return db.DeletePromptReply(prompt)
 }
 
 func GetPromptReply(message string) (string, bool) {
-	promptMutex.RLock()
-	defer promptMutex.RUnlock()
+	promptReplies, err := db.GetAllPromptReplies()
+	if err != nil {
+		log.Printf("Error getting prompt replies: %v", err)
+		return "", false
+	}
+
 	for prompt, reply := range promptReplies {
 		if strings.Contains(strings.ToLower(message), prompt) {
 			return reply, true
@@ -77,14 +90,22 @@ func HandlePromptCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 			bot.Send(tgbotapi.NewMessage(message.Chat.ID, "请同时提供提示词和回复。"))
 			return
 		}
-		SetPromptReply(promptAndReply[0], promptAndReply[1])
+		err := SetPromptReply(promptAndReply[0], promptAndReply[1])
+		if err != nil {
+			bot.Send(tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("设置提示词失败：%v", err)))
+			return
+		}
 		bot.Send(tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("已设置提示词 '%s' 的回复。", promptAndReply[0])))
 	case "delete":
 		if len(args) < 3 {
 			bot.Send(tgbotapi.NewMessage(message.Chat.ID, "使用方法: /prompt delete <提示词>"))
 			return
 		}
-		DeletePromptReply(args[2])
+		err := DeletePromptReply(args[2])
+		if err != nil {
+			bot.Send(tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("删除提示词失败：%v", err)))
+			return
+		}
 		bot.Send(tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("已删除提示词 '%s' 的回复。", args[2])))
 	case "list":
 		bot.Send(tgbotapi.NewMessage(message.Chat.ID, ListPromptReplies()))
