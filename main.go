@@ -18,7 +18,10 @@ func main() {
 		log.Fatalf("Invalid ADMIN_ID: %v", err)
 	}
 
-	service.Init(botToken, adminID)
+	err = service.Init(botToken, adminID)
+	if err != nil {
+		log.Fatalf("Failed to initialize service: %v", err)
+	}
 
 	go service.RunGuard()
 	go service.RunBinance()

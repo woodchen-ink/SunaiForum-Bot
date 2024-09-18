@@ -91,7 +91,7 @@ func startBot() error {
 		return fmt.Errorf("error registering commands: %w", err)
 	}
 
-	linkFilter, err := NewLinkFilter(core.DB_FILE)
+	linkFilter, err := NewLinkFilter()
 	if err != nil {
 		return fmt.Errorf("failed to create LinkFilter: %v", err)
 	}
