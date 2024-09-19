@@ -91,13 +91,17 @@ func (d *Database) AddKeyword(keyword string) error {
 	return nil
 }
 
-func (d *Database) RemoveKeyword(keyword string) error {
-	_, err := d.db.Exec("DELETE FROM keywords WHERE keyword = ?", keyword)
+func (d *Database) RemoveKeyword(keyword string) (bool, error) {
+	result, err := d.db.Exec("DELETE FROM keywords WHERE keyword = ?", keyword)
 	if err != nil {
-		return err
+		return false, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
 	}
 	d.invalidateCache("keywords")
-	return nil
+	return rowsAffected > 0, nil
 }
 
 func (d *Database) GetAllKeywords() ([]string, error) {
@@ -200,19 +204,41 @@ func (d *Database) WhitelistExists(domain string) (bool, error) {
 }
 
 func (d *Database) AddPromptReply(prompt, reply string) error {
-	_, err := d.db.Exec("INSERT OR REPLACE INTO prompt_replies (prompt, reply) VALUES (?, ?)", strings.ToLower(prompt), reply)
+	tx, err := d.db.Begin()
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec("INSERT OR REPLACE INTO prompt_replies (prompt, reply) VALUES (?, ?)", strings.ToLower(prompt), reply)
+	if err != nil {
+		return err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+
 	d.invalidateCache("promptReplies")
 	return nil
 }
 
 func (d *Database) DeletePromptReply(prompt string) error {
-	_, err := d.db.Exec("DELETE FROM prompt_replies WHERE prompt = ?", strings.ToLower(prompt))
+	tx, err := d.db.Begin()
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec("DELETE FROM prompt_replies WHERE prompt = ?", strings.ToLower(prompt))
+	if err != nil {
+		return err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+
 	d.invalidateCache("promptReplies")
 	return nil
 }
@@ -239,16 +265,15 @@ func (d *Database) GetAllPromptReplies() (map[string]string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if d.promptRepliesCache == nil || time.Since(d.promptRepliesCacheTime) > 5*time.Minute {
-		promptReplies, err := d.fetchAllPromptReplies()
-		if err != nil {
-			return nil, err
-		}
-		d.promptRepliesCache = promptReplies
-		d.promptRepliesCacheTime = time.Now()
+	// 强制刷新缓存
+	promptReplies, err := d.fetchAllPromptReplies()
+	if err != nil {
+		return nil, err
 	}
+	d.promptRepliesCache = promptReplies
+	d.promptRepliesCacheTime = time.Now()
 
-	// 返回一个副本以防止外部修改缓存
+	// 返回一个副本
 	result := make(map[string]string, len(d.promptRepliesCache))
 	for k, v := range d.promptRepliesCache {
 		result[k] = v

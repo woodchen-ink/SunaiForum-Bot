@@ -22,6 +22,7 @@ var (
 	DB_FILE     string
 	DEBUG_MODE  bool
 	err         error
+	DB          *Database
 )
 
 func IsAdmin(userID int64) bool {
@@ -52,20 +53,12 @@ func Init() error {
 	adminIDStr := os.Getenv("ADMIN_ID")
 	ADMIN_ID, err = mustParseInt64(adminIDStr)
 	if err != nil {
-		return fmt.Errorf("Invalid ADMIN_ID: %v", err)
+		return fmt.Errorf("invalid ADMIN_ID: %v", err)
 	}
-
-	// 初始化 Bot API
-	Bot, err = tgbotapi.NewBotAPI(BOT_TOKEN)
-	if err != nil {
-		return fmt.Errorf("创建 Bot API 失败: %v", err)
-	}
-
-	log.Printf("账户已授权 %s", Bot.Self.UserName)
 
 	// 初始化数据库
 	DB_FILE = filepath.Join("/app/data", "q58.db")
-	_, err = NewDatabase()
+	DB, err = NewDatabase()
 	if err != nil {
 		return fmt.Errorf("初始化数据库失败: %v", err)
 	}
@@ -81,7 +74,7 @@ func Init() error {
 	chatIDStr := os.Getenv("CHAT_ID")
 	ChatID, err = mustParseInt64(chatIDStr)
 	if err != nil {
-		return fmt.Errorf("Invalid CHAT_ID: %v", err)
+		return fmt.Errorf("invalid CHAT_ID: %v", err)
 	}
 
 	// 初始化 Symbols

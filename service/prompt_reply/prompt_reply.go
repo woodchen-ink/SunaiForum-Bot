@@ -4,32 +4,51 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/woodchen-ink/Q58Bot/core"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-var db *core.Database
-
-func init() {
-	var err error
-	db, err = core.NewDatabase()
-	if err != nil {
-		log.Fatalf("Error initializing database: %v", err)
-	}
-}
-
 func SetPromptReply(prompt, reply string) error {
-	return db.AddPromptReply(prompt, reply)
+	err := core.DB.AddPromptReply(prompt, reply)
+	if err != nil {
+		log.Printf("提示回复: %s 设置提示回复失败: %v", time.Now().Format("2006/01/02 15:04:05"), err)
+		return err
+	}
+
+	// 获取当前所有的 prompt replies 来确认添加成功
+	promptReplies, err := core.DB.GetAllPromptReplies()
+	if err != nil {
+		log.Printf("提示回复: %s 添加后获取提示回复列表出错: %v", time.Now().Format("2006/01/02 15:04:05"), err)
+	} else {
+		log.Printf("提示回复: %s 设置提示回复成功。当前提示回复数量: %d", time.Now().Format("2006/01/02 15:04:05"), len(promptReplies))
+	}
+
+	return nil
 }
 
 func DeletePromptReply(prompt string) error {
-	return db.DeletePromptReply(prompt)
+	err := core.DB.DeletePromptReply(prompt)
+	if err != nil {
+		log.Printf("提示回复: %s 删除提示回复失败: %v", time.Now().Format("2006/01/02 15:04:05"), err)
+		return err
+	}
+
+	// 获取当前所有的 prompt replies 来确认删除成功
+	promptReplies, err := core.DB.GetAllPromptReplies()
+	if err != nil {
+		log.Printf("提示回复: %s 删除后获取提示回复列表出错: %v", time.Now().Format("2006/01/02 15:04:05"), err)
+	} else {
+		log.Printf("提示回复: %s 删除提示回复成功。当前提示回复数量: %d", time.Now().Format("2006/01/02 15:04:05"), len(promptReplies))
+	}
+
+	return nil
 }
 
 func GetPromptReply(message string) (string, bool) {
-	promptReplies, err := db.GetAllPromptReplies()
+	promptReplies, err := core.DB.GetAllPromptReplies()
 	if err != nil {
 		log.Printf("Error getting prompt replies: %v", err)
 		return "", false
@@ -45,7 +64,7 @@ func GetPromptReply(message string) (string, bool) {
 }
 
 func ListPromptReplies() string {
-	replies, err := db.GetAllPromptReplies()
+	replies, err := core.DB.GetAllPromptReplies()
 	if err != nil {
 		log.Printf("Error getting prompt replies: %v", err)
 		return "Error retrieving prompt replies"

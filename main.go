@@ -15,6 +15,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize service: %v", err)
 	}
+	defer core.DB.Close() // 确保在程序退出时关闭数据库连接
 
 	go binance.RunBinance()
 

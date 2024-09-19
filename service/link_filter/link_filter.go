@@ -14,7 +14,6 @@ import (
 var logger = log.New(log.Writer(), "LinkFilter: ", log.Ldate|log.Ltime|log.Lshortfile)
 
 type LinkFilter struct {
-	db          *core.Database
 	keywords    []string
 	whitelist   []string
 	linkPattern *regexp.Regexp
@@ -22,18 +21,11 @@ type LinkFilter struct {
 }
 
 func NewLinkFilter() (*LinkFilter, error) {
-	db, err := core.NewDatabase()
-	if err != nil {
-		return nil, err
-	}
-
 	lf := &LinkFilter{
-		db:          db,
 		linkPattern: regexp.MustCompile(`(?i)\b(?:(?:https?://)?(?:(?:www\.)?(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}|(?:t\.me|telegram\.me))(?:/[^\s]*)?)`),
 	}
 
 	if err := lf.LoadDataFromFile(); err != nil {
-		db.Close() // Close the database if loading fails
 		return nil, err
 	}
 
@@ -45,12 +37,12 @@ func (lf *LinkFilter) LoadDataFromFile() error {
 	defer lf.mu.Unlock()
 
 	var err error
-	lf.keywords, err = lf.db.GetAllKeywords()
+	lf.keywords, err = core.DB.GetAllKeywords()
 	if err != nil {
 		return err
 	}
 
-	lf.whitelist, err = lf.db.GetAllWhitelist()
+	lf.whitelist, err = core.DB.GetAllWhitelist()
 	if err != nil {
 		return err
 	}
@@ -135,7 +127,7 @@ func (lf *LinkFilter) AddKeyword(keyword string) error {
 			return nil
 		}
 	}
-	err := lf.db.AddKeyword(keyword)
+	err := core.DB.AddKeyword(keyword)
 	if err != nil {
 		return err
 	}
@@ -144,18 +136,19 @@ func (lf *LinkFilter) AddKeyword(keyword string) error {
 }
 
 func (lf *LinkFilter) RemoveKeyword(keyword string) bool {
-	for _, k := range lf.keywords {
-		if k == keyword {
-			lf.db.RemoveKeyword(keyword)
-			lf.LoadDataFromFile()
-			return true
-		}
+	removed, err := core.DB.RemoveKeyword(keyword)
+	if err != nil {
+		logger.Printf("Error removing keyword: %v", err)
+		return false
 	}
-	return false
+	if removed {
+		lf.LoadDataFromFile()
+	}
+	return removed
 }
 
 func (lf *LinkFilter) RemoveKeywordsContaining(substring string) ([]string, error) {
-	removed, err := lf.db.RemoveKeywordsContaining(substring)
+	removed, err := core.DB.RemoveKeywordsContaining(substring)
 	if err != nil {
 		return nil, err
 	}
@@ -210,9 +203,4 @@ func (lf *LinkFilter) containsKeyword(link string) bool {
 		}
 	}
 	return false
-}
-
-// 新增 Close 方法
-func (lf *LinkFilter) Close() error {
-	return lf.db.Close()
 }
