@@ -115,6 +115,14 @@ func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter 
 func RunMessageHandler() error {
 	log.Println("消息处理器启动...")
 
+	// 加载提示回复数据
+	err := prompt_reply.Manager.LoadDataFromDatabase()
+	if err != nil {
+		log.Printf("加载提示回复数据失败: %v", err)
+		// 考虑是否要因为这个错误停止启动
+		// return fmt.Errorf("加载提示回复数据失败: %w", err)
+	}
+
 	baseDelay := time.Second
 	maxDelay := 5 * time.Minute
 	delay := baseDelay

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/woodchen-ink/Q58Bot/core"
@@ -11,6 +12,33 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+type PromptReplyManager struct {
+	promptReplies map[string]string
+	mu            sync.RWMutex
+}
+
+var Manager *PromptReplyManager
+
+func init() {
+	Manager = &PromptReplyManager{
+		promptReplies: make(map[string]string),
+	}
+}
+
+func (prm *PromptReplyManager) LoadDataFromDatabase() error {
+	prm.mu.Lock()
+	defer prm.mu.Unlock()
+
+	promptReplies, err := core.DB.GetAllPromptReplies()
+	if err != nil {
+		return err
+	}
+
+	prm.promptReplies = promptReplies
+
+	log.Printf("提示回复: 已从数据库加载 %d 条提示回复", len(prm.promptReplies))
+	return nil
+}
 func SetPromptReply(prompt, reply string) error {
 	err := core.DB.AddPromptReply(prompt, reply)
 	if err != nil {
@@ -18,14 +46,11 @@ func SetPromptReply(prompt, reply string) error {
 		return err
 	}
 
-	// 获取当前所有的 prompt replies 来确认添加成功
-	promptReplies, err := core.DB.GetAllPromptReplies()
-	if err != nil {
-		log.Printf("提示回复: %s 添加后获取提示回复列表出错: %v", time.Now().Format("2006/01/02 15:04:05"), err)
-	} else {
-		log.Printf("提示回复: %s 设置提示回复成功。当前提示回复数量: %d", time.Now().Format("2006/01/02 15:04:05"), len(promptReplies))
-	}
+	Manager.mu.Lock()
+	Manager.promptReplies[prompt] = reply
+	Manager.mu.Unlock()
 
+	log.Printf("提示回复: %s 设置提示回复成功。当前提示回复数量: %d", time.Now().Format("2006/01/02 15:04:05"), len(Manager.promptReplies))
 	return nil
 }
 
@@ -36,14 +61,11 @@ func DeletePromptReply(prompt string) error {
 		return err
 	}
 
-	// 获取当前所有的 prompt replies 来确认删除成功
-	promptReplies, err := core.DB.GetAllPromptReplies()
-	if err != nil {
-		log.Printf("提示回复: %s 删除后获取提示回复列表出错: %v", time.Now().Format("2006/01/02 15:04:05"), err)
-	} else {
-		log.Printf("提示回复: %s 删除提示回复成功。当前提示回复数量: %d", time.Now().Format("2006/01/02 15:04:05"), len(promptReplies))
-	}
+	Manager.mu.Lock()
+	delete(Manager.promptReplies, prompt)
+	Manager.mu.Unlock()
 
+	log.Printf("提示回复: %s 删除提示回复成功。当前提示回复数量: %d", time.Now().Format("2006/01/02 15:04:05"), len(Manager.promptReplies))
 	return nil
 }
 
