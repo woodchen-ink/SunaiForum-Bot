@@ -57,6 +57,56 @@ docker-compose up -d
 - 确保 Telegram 机器人已被添加到目标群组，并被赋予管理员权限
 - 定期检查日志以确保服务正常运行
 
+## 项目结构
+```
+Q58Bot/
+│
+├── core/
+│   ├── bot_commands.go # 注册机器人命令
+│   ├── database.go # 数据库操作
+│   ├── init.go # 初始化全局变量
+│   └── ratelimiter.go # 限速器
+│
+├── service/
+│   ├── binance/
+│   │   └── binance.go # 获取币安价格信息
+│   │   
+|   |── group_member_management/
+|   |  └── group_member_management.go # 对群组进行管理
+│   │  
+│   ├── link_filter/
+│   │   └── link_filter.go # 链接过滤器
+│   │
+│   ├── prompt_reply/
+│   |   └── prompt_reply.go # 提示词自动回复
+│   │
+│   └── message_handler.go # 消息处理器
+│
+├── docker-compose.yml
+├── Dockerfile.multi
+├── go.mod
+├── go.sum
+├── main.go # 入口文件
+└── README.md
+```
+## 设计规范
+
+> 自己记录
+
+1. 关于数据库的操作, 需要在运行时进行一次加载数据
+2. 任何操作需要添加相关日志, 日志需要包含时间戳
+3. 要使用全局的数据库实例`core.DB`, 相关代码如下:
+   - `init.go`里
+      ``` go
+      // 初始化数据库
+      DB_FILE = filepath.Join("/app/data", "q58.db")
+      var err error
+      DB, err = NewDatabase()
+      if err != nil {
+         return fmt.Errorf("初始化数据库失败: %v", err)
+      }
+      ```
+
 ## 贡献
 
 欢迎提交 Issues 和 Pull Requests 来帮助改进这个项目。

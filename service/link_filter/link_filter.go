@@ -14,40 +14,40 @@ import (
 var logger = log.New(log.Writer(), "LinkFilter: ", log.Ldate|log.Ltime|log.Lshortfile)
 
 type LinkFilter struct {
-	keywords    []string
-	whitelist   []string
-	linkPattern *regexp.Regexp
-	mu          sync.RWMutex
+	Keywords    []string
+	Whitelist   []string
+	LinkPattern *regexp.Regexp
+	Mu          sync.RWMutex
 }
 
 func NewLinkFilter() (*LinkFilter, error) {
 	lf := &LinkFilter{
-		linkPattern: regexp.MustCompile(`(?i)\b(?:(?:https?://)?(?:(?:www\.)?(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}|(?:t\.me|telegram\.me))(?:/[^\s]*)?)`),
+		LinkPattern: regexp.MustCompile(`(?i)\b(?:(?:https?://)?(?:(?:www\.)?(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}|(?:t\.me|telegram\.me))(?:/[^\s]*)?)`),
 	}
 
-	if err := lf.LoadDataFromFile(); err != nil {
+	if err := lf.LoadDataFromDatabase(); err != nil {
 		return nil, err
 	}
 
 	return lf, nil
 }
 
-func (lf *LinkFilter) LoadDataFromFile() error {
-	lf.mu.Lock()
-	defer lf.mu.Unlock()
+func (lf *LinkFilter) LoadDataFromDatabase() error {
+	lf.Mu.Lock()
+	defer lf.Mu.Unlock()
 
 	var err error
-	lf.keywords, err = core.DB.GetAllKeywords()
+	lf.Keywords, err = core.DB.GetAllKeywords()
 	if err != nil {
 		return err
 	}
 
-	lf.whitelist, err = core.DB.GetAllWhitelist()
+	lf.Whitelist, err = core.DB.GetAllWhitelist()
 	if err != nil {
 		return err
 	}
 
-	logger.Printf("Loaded %d keywords and %d whitelist entries from database", len(lf.keywords), len(lf.whitelist))
+	logger.Printf("Loaded %d Keywords and %d Whitelist entries from database", len(lf.Keywords), len(lf.Whitelist))
 	return nil
 }
 
@@ -106,101 +106,12 @@ func (lf *LinkFilter) domainMatch(domain, whiteDomain string) bool {
 }
 func (lf *LinkFilter) IsWhitelisted(link string) bool {
 	domain := lf.ExtractDomain(link)
-	for _, whiteDomain := range lf.whitelist {
+	for _, whiteDomain := range lf.Whitelist {
 		if lf.domainMatch(domain, whiteDomain) {
 			logger.Printf("Whitelist check for %s: Passed (matched %s)", link, whiteDomain)
 			return true
 		}
 	}
 	logger.Printf("Whitelist check for %s: Failed", link)
-	return false
-}
-
-func (lf *LinkFilter) AddKeyword(keyword string) error {
-	if lf.linkPattern.MatchString(keyword) {
-		keyword = lf.NormalizeLink(keyword)
-	}
-	keyword = strings.TrimPrefix(keyword, "/")
-	for _, k := range lf.keywords {
-		if k == keyword {
-			logger.Printf("Keyword already exists: %s", keyword)
-			return nil
-		}
-	}
-	err := core.DB.AddKeyword(keyword)
-	if err != nil {
-		return err
-	}
-	logger.Printf("New keyword added: %s", keyword)
-	return lf.LoadDataFromFile()
-}
-
-func (lf *LinkFilter) RemoveKeyword(keyword string) bool {
-	removed, err := core.DB.RemoveKeyword(keyword)
-	if err != nil {
-		logger.Printf("Error removing keyword: %v", err)
-		return false
-	}
-	if removed {
-		lf.LoadDataFromFile()
-	}
-	return removed
-}
-
-func (lf *LinkFilter) RemoveKeywordsContaining(substring string) ([]string, error) {
-	removed, err := core.DB.RemoveKeywordsContaining(substring)
-	if err != nil {
-		return nil, err
-	}
-	err = lf.LoadDataFromFile()
-	if err != nil {
-		return nil, err
-	}
-	return removed, nil
-}
-
-// 检查消息是否包含关键词或者非白名单链接
-func (lf *LinkFilter) ShouldFilter(text string) (bool, []string) {
-	logger.Printf("Checking text: %s", text)
-
-	lf.mu.RLock()
-	defer lf.mu.RUnlock()
-
-	for _, keyword := range lf.keywords {
-		if strings.Contains(strings.ToLower(text), strings.ToLower(keyword)) {
-			logger.Printf("文字包含关键字: %s", keyword)
-			return true, nil
-		}
-	}
-
-	links := lf.linkPattern.FindAllString(text, -1)
-	logger.Printf("找到链接: %v", links)
-
-	var newNonWhitelistedLinks []string
-	for _, link := range links {
-		normalizedLink := lf.NormalizeLink(link)
-		if !lf.IsWhitelisted(normalizedLink) {
-			logger.Printf("链接未列入白名单: %s", normalizedLink)
-			if !lf.containsKeyword(normalizedLink) {
-				newNonWhitelistedLinks = append(newNonWhitelistedLinks, normalizedLink)
-				lf.AddKeyword(normalizedLink) // 注意：这里会修改 lf.keywords，可能需要额外的锁
-			} else {
-				return true, nil
-			}
-		}
-	}
-
-	if len(newNonWhitelistedLinks) > 0 {
-		logger.Printf("发现新的非白名单链接: %v", newNonWhitelistedLinks)
-	}
-	return false, newNonWhitelistedLinks
-}
-
-func (lf *LinkFilter) containsKeyword(link string) bool {
-	for _, keyword := range lf.keywords {
-		if keyword == link {
-			return true
-		}
-	}
 	return false
 }

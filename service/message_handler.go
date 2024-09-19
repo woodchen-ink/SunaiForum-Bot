@@ -14,6 +14,10 @@ import (
 	"github.com/woodchen-ink/Q58Bot/service/prompt_reply"
 )
 
+var (
+	logger = log.New(log.Writer(), "MessageHandler: ", log.Ldate|log.Ltime|log.Lshortfile)
+)
+
 // handleUpdate 处理所有传入的更新信息，包括消息和命令, 然后分开处理。
 func handleUpdate(bot *tgbotapi.BotAPI, update tgbotapi.Update, linkFilter *link_filter.LinkFilter, rateLimiter *core.RateLimiter) {
 	// 检查更新是否包含消息，如果不包含则直接返回。
@@ -64,7 +68,7 @@ func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter 
 	// 如果不是管理员，才进行链接过滤
 	if !core.IsAdmin(message.From.ID) {
 		// 判断消息是否应当被过滤及找出新的非白名单链接
-		shouldFilter, newLinks := linkFilter.ShouldFilter(message.Text)
+		shouldFilter, newLinks := ShouldFilter(message.Text, linkFilter)
 		if shouldFilter {
 			// 记录被过滤的消息
 			log.Printf("消息应该被过滤: %s", message.Text)
@@ -429,4 +433,82 @@ func handleDeleteWhitelist(bot *tgbotapi.BotAPI, message *tgbotapi.Message, doma
 	} else {
 		sendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("未能从白名单中删除域名 '%s'。", domain))
 	}
+}
+
+func addNewKeyword(keyword string) error {
+	exists, err := core.DB.KeywordExists(keyword)
+	if err != nil {
+		return fmt.Errorf("检查关键词时发生错误: %v", err)
+	}
+	if !exists {
+		err = core.DB.AddKeyword(keyword)
+		if err != nil {
+			return fmt.Errorf("添加关键词时发生错误: %v", err)
+		}
+		logger.Printf("新关键词已添加: %s", keyword)
+	}
+	return nil
+}
+
+// ShouldFilter 检查消息是否包含关键词或者非白名单链接
+func ShouldFilter(text string, linkFilter *link_filter.LinkFilter) (bool, []string) {
+	logger.Printf("Checking text: %s", text)
+
+	if containsKeyword(text, linkFilter) {
+		return true, nil
+	}
+
+	links := extractLinks(text, linkFilter)
+	return processLinks(links, linkFilter)
+}
+
+func containsKeyword(text string, linkFilter *link_filter.LinkFilter) bool {
+	linkFilter.Mu.RLock()
+	defer linkFilter.Mu.RUnlock()
+
+	for _, keyword := range linkFilter.Keywords {
+		if strings.Contains(strings.ToLower(text), strings.ToLower(keyword)) {
+			logger.Printf("文字包含关键字: %s", keyword)
+			return true
+		}
+	}
+	return false
+}
+
+func extractLinks(text string, linkFilter *link_filter.LinkFilter) []string {
+	linkFilter.Mu.RLock()
+	defer linkFilter.Mu.RUnlock()
+
+	links := linkFilter.LinkPattern.FindAllString(text, -1)
+	logger.Printf("找到链接: %v", links)
+	return links
+}
+
+func processLinks(links []string, linkFilter *link_filter.LinkFilter) (bool, []string) {
+	var newNonWhitelistedLinks []string
+
+	for _, link := range links {
+		normalizedLink := linkFilter.NormalizeLink(link)
+		if !linkFilter.IsWhitelisted(normalizedLink) {
+			logger.Printf("链接未列入白名单: %s", normalizedLink)
+			if !containsKeyword(normalizedLink, linkFilter) {
+				newNonWhitelistedLinks = append(newNonWhitelistedLinks, normalizedLink)
+				err := addNewKeyword(normalizedLink)
+				if err != nil {
+					logger.Printf("添加关键词时发生错误: %v", err)
+				}
+				// 如果成功添加了新关键词，更新 linkFilter 的 Keywords
+				linkFilter.Mu.Lock()
+				linkFilter.Keywords = append(linkFilter.Keywords, normalizedLink)
+				linkFilter.Mu.Unlock()
+			} else {
+				return true, nil
+			}
+		}
+	}
+
+	if len(newNonWhitelistedLinks) > 0 {
+		logger.Printf("发现新的非白名单链接: %v", newNonWhitelistedLinks)
+	}
+	return false, newNonWhitelistedLinks
 }
