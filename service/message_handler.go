@@ -125,8 +125,10 @@ func RunMessageHandler() error {
 
 	for {
 		err := func() error {
+			log.Printf("Attempting to create bot with token: %s", core.BOT_TOKEN)
 			bot, err := tgbotapi.NewBotAPI(core.BOT_TOKEN)
 			if err != nil {
+				log.Printf("Error details: %+v", err)
 				return fmt.Errorf("failed to create bot: %w", err)
 			}
 
