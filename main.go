@@ -16,12 +16,10 @@ func main() {
 		log.Fatalf("Failed to initialize service: %v", err)
 	}
 
+	go binance.RunBinance()
+
 	err = service.RunMessageHandler()
 	if err != nil {
 		log.Fatalf("Error in RunMessageHandler: %v", err)
 	}
-
-	go binance.RunBinance()
-
-	select {}
 }

@@ -1,6 +1,5 @@
 package prompt_reply
 
-//提示词回复
 import (
 	"fmt"
 	"log"
@@ -12,6 +11,14 @@ import (
 )
 
 var db *core.Database
+
+func init() {
+	var err error
+	db, err = core.NewDatabase()
+	if err != nil {
+		log.Fatalf("Error initializing database: %v", err)
+	}
+}
 
 func SetPromptReply(prompt, reply string) error {
 	return db.AddPromptReply(prompt, reply)
@@ -28,8 +35,9 @@ func GetPromptReply(message string) (string, bool) {
 		return "", false
 	}
 
+	message = strings.ToLower(message)
 	for prompt, reply := range promptReplies {
-		if strings.Contains(strings.ToLower(message), prompt) {
+		if strings.Contains(message, strings.ToLower(prompt)) {
 			return reply, true
 		}
 	}
@@ -37,21 +45,21 @@ func GetPromptReply(message string) (string, bool) {
 }
 
 func ListPromptReplies() string {
-	promptReplies, err := db.GetAllPromptReplies()
+	replies, err := db.GetAllPromptReplies()
 	if err != nil {
 		log.Printf("Error getting prompt replies: %v", err)
-		return "获取提示词回复时发生错误。"
+		return "Error retrieving prompt replies"
 	}
 
-	if len(promptReplies) == 0 {
-		return "目前没有设置任何提示词回复。"
+	if len(replies) == 0 {
+		return "No prompt replies found"
 	}
 
 	var result strings.Builder
-	result.WriteString("当前设置的提示词回复：\n")
-	for prompt, reply := range promptReplies {
-		result.WriteString(fmt.Sprintf("提示词: %s\n回复: %s\n\n", prompt, reply))
+	for prompt, reply := range replies {
+		result.WriteString(fmt.Sprintf("Prompt: %s\nReply: %s\n\n", prompt, reply))
 	}
+
 	return result.String()
 }
 

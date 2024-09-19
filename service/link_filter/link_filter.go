@@ -1,12 +1,12 @@
 package link_filter
 
-// 链接处理
 import (
 	"fmt"
 	"log"
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/woodchen-ink/Q58Bot/core"
 )
@@ -18,72 +18,47 @@ type LinkFilter struct {
 	keywords    []string
 	whitelist   []string
 	linkPattern *regexp.Regexp
+	mu          sync.RWMutex
 }
 
-// NewLinkFilter 创建一个新的LinkFilter实例。这个实例用于过滤链接，且在创建时会初始化数据库连接和链接过滤正则表达式。
-// 它首先尝试创建一个数据库连接，然后加载链接过滤所需的配置，最后返回一个包含所有初始化设置的LinkFilter实例。
-// 如果在任何步骤中发生错误，错误将被返回，LinkFilter实例将不会被创建。
 func NewLinkFilter() (*LinkFilter, error) {
-	// 初始化数据库连接
 	db, err := core.NewDatabase()
 	if err != nil {
 		return nil, err
 	}
-	// 创建LinkFilter实例
+
 	lf := &LinkFilter{
-		db: db,
+		db:          db,
+		linkPattern: regexp.MustCompile(`(?i)\b(?:(?:https?://)?(?:(?:www\.)?(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}|(?:t\.me|telegram\.me))(?:/[^\s]*)?)`),
 	}
-	// 编译链接过滤正则表达式
-	lf.linkPattern = regexp.MustCompile(`(?i)\b(?:(?:https?://)?(?:(?:www\.)?(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}|(?:t\.me|telegram\.me))(?:/[^\s]*)?)`)
-	// 从文件中加载额外的链接过滤数据
-	err = lf.LoadDataFromFile()
-	if err != nil {
+
+	if err := lf.LoadDataFromFile(); err != nil {
+		db.Close() // Close the database if loading fails
 		return nil, err
 	}
+
 	return lf, nil
 }
 
-// LoadDataFromFile 从文件中加载数据到 LinkFilter 结构体的 keywords 和 whitelist 字段。
-// 它首先从数据库中获取所有的关键词和白名单条目，如果数据库操作出现错误，它会立即返回错误。
-// 一旦数据成功加载，它会通过日志记录加载的关键词和白名单条目的数量。
-// 参数: 无
-// 返回值: 如果加载过程中发生错误，返回该错误；否则返回 nil。
 func (lf *LinkFilter) LoadDataFromFile() error {
-	// 从数据库中加载所有关键词到 lf.keywords
+	lf.mu.Lock()
+	defer lf.mu.Unlock()
+
 	var err error
 	lf.keywords, err = lf.db.GetAllKeywords()
 	if err != nil {
-		// 如果发生错误，立即返回
 		return err
 	}
 
-	// 从数据库中加载所有白名单条目到 lf.whitelist
 	lf.whitelist, err = lf.db.GetAllWhitelist()
 	if err != nil {
-		// 如果发生错误，立即返回
 		return err
 	}
 
-	// 记录成功加载的关键词和白名单条目的数量
 	logger.Printf("Loaded %d keywords and %d whitelist entries from database", len(lf.keywords), len(lf.whitelist))
-
-	// 数据加载成功，返回 nil
 	return nil
 }
 
-// NormalizeLink 标准化链接地址。
-//
-// 该函数接受一个链接字符串，对其进行标准化处理，并返回处理后的链接。
-// 标准化过程包括移除协议头（http或https）、TrimPrefix去除链接中的斜杠、
-// 解析URL以获取主机名和路径、将查询参数附加到URL末尾。
-//
-// 参数:
-//
-//	link - 需要被标准化的链接字符串。
-//
-// 返回值:
-//
-//	标准化后的链接字符串。
 func (lf *LinkFilter) NormalizeLink(link string) string {
 	// 移除链接中的协议头（http或https）
 	link = regexp.MustCompile(`^https?://`).ReplaceAllString(link, "")
@@ -109,16 +84,6 @@ func (lf *LinkFilter) NormalizeLink(link string) string {
 	return result
 }
 
-// ExtractDomain 从给定的URL字符串中提取域名。
-// 该函数首先解析URL字符串，然后返回解析得到的主机名，同时将其转换为小写。
-// 如果URL解析失败，错误信息将被记录，并且函数会返回原始的URL字符串。
-// 参数:
-//
-//	urlStr - 待处理的URL字符串。
-//
-// 返回值:
-//
-//	解析后的主机名，如果解析失败则返回原始的URL字符串。
 func (lf *LinkFilter) ExtractDomain(urlStr string) string {
 	// 尝试解析给定的URL字符串。
 	parsedURL, err := url.Parse(urlStr)
@@ -204,9 +169,13 @@ func (lf *LinkFilter) RemoveKeywordsContaining(substring string) ([]string, erro
 // 检查消息是否包含关键词或者非白名单链接
 func (lf *LinkFilter) ShouldFilter(text string) (bool, []string) {
 	logger.Printf("Checking text: %s", text)
+
+	lf.mu.RLock()
+	defer lf.mu.RUnlock()
+
 	for _, keyword := range lf.keywords {
 		if strings.Contains(strings.ToLower(text), strings.ToLower(keyword)) {
-			logger.Printf("文字包含关键字: %s", text)
+			logger.Printf("文字包含关键字: %s", keyword)
 			return true, nil
 		}
 	}
@@ -219,16 +188,11 @@ func (lf *LinkFilter) ShouldFilter(text string) (bool, []string) {
 		normalizedLink := lf.NormalizeLink(link)
 		if !lf.IsWhitelisted(normalizedLink) {
 			logger.Printf("链接未列入白名单: %s", normalizedLink)
-			found := false
-			for _, keyword := range lf.keywords {
-				if keyword == normalizedLink {
-					logger.Printf("找到现有关键字: %s", normalizedLink)
-					return true, nil
-				}
-			}
-			if !found {
+			if !lf.containsKeyword(normalizedLink) {
 				newNonWhitelistedLinks = append(newNonWhitelistedLinks, normalizedLink)
-				lf.AddKeyword(normalizedLink)
+				lf.AddKeyword(normalizedLink) // 注意：这里会修改 lf.keywords，可能需要额外的锁
+			} else {
+				return true, nil
 			}
 		}
 	}
@@ -237,4 +201,18 @@ func (lf *LinkFilter) ShouldFilter(text string) (bool, []string) {
 		logger.Printf("发现新的非白名单链接: %v", newNonWhitelistedLinks)
 	}
 	return false, newNonWhitelistedLinks
+}
+
+func (lf *LinkFilter) containsKeyword(link string) bool {
+	for _, keyword := range lf.keywords {
+		if keyword == link {
+			return true
+		}
+	}
+	return false
+}
+
+// 新增 Close 方法
+func (lf *LinkFilter) Close() error {
+	return lf.db.Close()
 }

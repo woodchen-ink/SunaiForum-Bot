@@ -10,6 +10,7 @@ import (
 
 	"github.com/adshao/go-binance/v2"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/woodchen-ink/Q58Bot/core"
 )
 
 var (
@@ -109,6 +110,13 @@ func sendPriceUpdate() {
 
 func RunBinance() {
 	log.Println("Starting Binance service...")
+
+	// 初始化必要的变量
+	botToken = core.BOT_TOKEN
+	bot = core.Bot
+	chatID = core.ChatID
+	symbols = core.Symbols
+	singaporeTZ = core.SingaporeTZ
 
 	// 立即发送一次价格更新
 	sendPriceUpdate()

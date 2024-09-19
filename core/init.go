@@ -40,6 +40,8 @@ func mustParseInt64(s string) (int64, error) {
 	return value, nil
 }
 func Init() error {
+	var err error
+
 	// 从环境变量获取 BOT_TOKEN
 	BOT_TOKEN = os.Getenv("BOT_TOKEN")
 	if BOT_TOKEN == "" {
@@ -48,14 +50,25 @@ func Init() error {
 
 	// 从环境变量获取 ADMIN_ID
 	adminIDStr := os.Getenv("ADMIN_ID")
-	var err error
 	ADMIN_ID, err = mustParseInt64(adminIDStr)
 	if err != nil {
 		return fmt.Errorf("Invalid ADMIN_ID: %v", err)
 	}
 
-	// 设置数据库文件路径
+	// 初始化 Bot API
+	Bot, err = tgbotapi.NewBotAPI(BOT_TOKEN)
+	if err != nil {
+		return fmt.Errorf("创建 Bot API 失败: %v", err)
+	}
+
+	log.Printf("账户已授权 %s", Bot.Self.UserName)
+
+	// 初始化数据库
 	DB_FILE = filepath.Join("/app/data", "q58.db")
+	_, err = NewDatabase()
+	if err != nil {
+		return fmt.Errorf("初始化数据库失败: %v", err)
+	}
 
 	// 从环境变量中读取调试模式设置
 	DEBUG_MODE = os.Getenv("DEBUG_MODE") == "true"
