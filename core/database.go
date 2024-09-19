@@ -1,5 +1,6 @@
 package core
 
+//数据库处理
 import (
 	"database/sql"
 	"os"

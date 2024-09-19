@@ -1,5 +1,6 @@
-package service
+package prompt_reply
 
+//提示词回复
 import (
 	"fmt"
 	"log"
@@ -11,15 +12,6 @@ import (
 )
 
 var db *core.Database
-
-func InitPromptService() error {
-	var err error
-	db, err = core.NewDatabase()
-	if err != nil {
-		return fmt.Errorf("failed to initialize database: %v", err)
-	}
-	return nil
-}
 
 func SetPromptReply(prompt, reply string) error {
 	return db.AddPromptReply(prompt, reply)

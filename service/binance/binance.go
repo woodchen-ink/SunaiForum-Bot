@@ -1,12 +1,11 @@
-package service
+package binance
 
+//币安价格推送
 import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/adshao/go-binance/v2"
@@ -21,38 +20,6 @@ var (
 	lastMsgID   int
 	singaporeTZ *time.Location
 )
-
-func init() {
-	var err error
-	botToken = os.Getenv("BOT_TOKEN")
-	chatID = mustParseInt64(os.Getenv("CHAT_ID"))
-
-	symbolsRaw := strings.Split(os.Getenv("SYMBOLS"), ",")
-	symbols = make([]string, len(symbolsRaw))
-	for i, s := range symbolsRaw {
-		symbols[i] = strings.ReplaceAll(s, "/", "")
-	}
-
-	singaporeTZ, err = time.LoadLocation("Asia/Singapore")
-	if err != nil {
-		log.Printf("Error loading Singapore time zone: %v", err)
-		log.Println("Falling back to UTC+8")
-		singaporeTZ = time.FixedZone("Asia/Singapore", 8*60*60)
-	}
-
-	bot, err = tgbotapi.NewBotAPI(botToken)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func mustParseInt64(s string) int64 {
-	i, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return i
-}
 
 type tickerInfo struct {
 	symbol        string

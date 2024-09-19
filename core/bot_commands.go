@@ -1,5 +1,6 @@
 package core
 
+// 注册命令
 import (
 	"fmt"
 	"log"
@@ -28,9 +29,9 @@ func RegisterCommands(bot *tgbotapi.BotAPI) error {
 
 	_, err := bot.Request(config)
 	if err != nil {
-		return fmt.Errorf("failed to register bot commands: %w", err)
+		return fmt.Errorf("注册机器人命令失败: %w", err)
 	}
 
-	log.Println("Bot commands registered successfully.")
+	log.Println("机器人命令注册成功。")
 	return nil
 }
