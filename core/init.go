@@ -39,7 +39,20 @@ func mustParseInt64(s string) (int64, error) {
 
 	return value, nil
 }
-func Init(botToken string, adminID int64) error {
+func Init() error {
+	// 从环境变量获取 BOT_TOKEN
+	BOT_TOKEN = os.Getenv("BOT_TOKEN")
+	if BOT_TOKEN == "" {
+		return fmt.Errorf("BOT_TOKEN 环境变量未设置")
+	}
+
+	// 从环境变量获取 ADMIN_ID
+	adminIDStr := os.Getenv("ADMIN_ID")
+	var err error
+	ADMIN_ID, err = mustParseInt64(adminIDStr)
+	if err != nil {
+		return fmt.Errorf("Invalid ADMIN_ID: %v", err)
+	}
 
 	// 设置数据库文件路径
 	DB_FILE = filepath.Join("/app/data", "q58.db")
@@ -55,7 +68,7 @@ func Init(botToken string, adminID int64) error {
 	chatIDStr := os.Getenv("CHAT_ID")
 	ChatID, err = mustParseInt64(chatIDStr)
 	if err != nil {
-		log.Fatalf("Invalid CHAT_ID: %v", err)
+		return fmt.Errorf("Invalid CHAT_ID: %v", err)
 	}
 
 	// 初始化 Symbols
@@ -74,9 +87,9 @@ func Init(botToken string, adminID int64) error {
 	}
 
 	// 初始化 Bot API
-	Bot, err = tgbotapi.NewBotAPI(botToken)
+	Bot, err = tgbotapi.NewBotAPI(BOT_TOKEN)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("创建 Bot API 失败: %v", err)
 	}
 
 	log.Printf("账户已授权 %s", Bot.Self.UserName)
