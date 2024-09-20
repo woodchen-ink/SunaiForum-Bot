@@ -76,7 +76,7 @@ func sendPriceUpdate() {
 	message := fmt.Sprintf("市场更新 - %s (SGT)\n\n", now.Format("2006-01-02 15:04:05"))
 
 	for _, symbol := range symbols {
-		info, err := getTickerInfo(symbol)
+		info, err := getTickerInfo(symbol) // 直接使用完整的交易对名称
 		if err != nil {
 			log.Printf("Error getting ticker info for %s: %v", symbol, err)
 			continue

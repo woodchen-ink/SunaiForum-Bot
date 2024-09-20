@@ -30,11 +30,11 @@ func LoadSymbols() error {
 	symbols = nil // 清空旧的符号列表
 	for _, symbol := range exchangeInfo.Symbols {
 		if symbol.Status == "TRADING" && symbol.QuoteAsset == "USDT" {
-			symbols = append(symbols, symbol.BaseAsset)
+			symbols = append(symbols, symbol.Symbol) // 使用完整的交易对名称
 		}
 	}
 
-	log.Printf("Loaded %d trading pairs", len(symbols))
+	log.Printf("Loaded %d valid USDT trading pairs", len(symbols))
 	return nil
 }
 
@@ -60,14 +60,12 @@ func StartSymbolRefresh(interval time.Duration) {
 
 // HandleSymbolQuery 处理虚拟币名查询
 func HandleSymbolQuery(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	// 获取所有虚拟币名
 	symbols := GetAllSymbols()
+	upperMsg := strings.ToUpper(message.Text)
 
-	// 检查消息内容中是否包含虚拟币名
 	for _, symbol := range symbols {
-		if strings.Contains(strings.ToUpper(message.Text), symbol) {
-			// 查询价格并回复
-			info, err := getTickerInfo(symbol + "USDT") // 查询对应USDT价格
+		if strings.Contains(upperMsg, strings.TrimSuffix(symbol, "USDT")) {
+			info, err := getTickerInfo(symbol)
 			if err != nil {
 				log.Printf("Error getting ticker info for %s: %v", symbol, err)
 				return
@@ -79,7 +77,7 @@ func HandleSymbolQuery(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 			msg := tgbotapi.NewMessage(message.Chat.ID, replyMessage)
 			msg.ParseMode = "Markdown"
 			bot.Send(msg)
-			return // 找到并回复后退出
+			return
 		}
 	}
 }
