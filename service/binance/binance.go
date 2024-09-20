@@ -76,7 +76,7 @@ func sendPriceUpdate() {
 	message := fmt.Sprintf("市场更新 - %s (SGT)\n\n", now.Format("2006-01-02 15:04:05"))
 
 	for _, symbol := range symbols {
-		info, err := getTickerInfo(symbol) // 直接使用完整的交易对名称
+		info, err := getTickerInfo(symbol)
 		if err != nil {
 			log.Printf("Error getting ticker info for %s: %v", symbol, err)
 			continue
@@ -118,9 +118,9 @@ func RunBinance() {
 	symbols = core.Symbols
 	singaporeTZ = core.SingaporeTZ
 
-	// 初始化并加载交易对
-	if err := LoadSymbols(); err != nil {
-		log.Fatalf("Failed to load trading pairs: %v", err)
+	// 初始化并加载所有交易对
+	if err := LoadAllSymbols(); err != nil {
+		log.Fatalf("Failed to load all trading pairs: %v", err)
 	}
 
 	// 启动每小时刷新交易对缓存
