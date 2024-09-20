@@ -35,3 +35,37 @@ func DeleteMessageAfterDelay(bot *tgbotapi.BotAPI, chatID int64, messageID int, 
 		}
 	}()
 }
+
+func SendMessage(bot *tgbotapi.BotAPI, chatID int64, text string) error {
+	msg := tgbotapi.NewMessage(chatID, text)
+	_, err := bot.Send(msg)
+	return err
+}
+
+func SendErrorMessage(bot *tgbotapi.BotAPI, chatID int64, errMsg string) {
+	SendMessage(bot, chatID, errMsg)
+}
+
+const (
+	maxMessageLength = 4000
+)
+
+func SendLongMessage(bot *tgbotapi.BotAPI, chatID int64, prefix string, items []string) error {
+	message := prefix + "\n"
+	for i, item := range items {
+		newLine := fmt.Sprintf("%d. %s\n", i+1, item)
+		if len(message)+len(newLine) > maxMessageLength {
+			if err := SendMessage(bot, chatID, message); err != nil {
+				return err
+			}
+			message = ""
+		}
+		message += newLine
+	}
+
+	if message != "" {
+		return SendMessage(bot, chatID, message)
+	}
+
+	return nil
+}

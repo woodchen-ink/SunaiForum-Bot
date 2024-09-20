@@ -9,6 +9,7 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/woodchen-ink/Q58Bot/core"
+	"github.com/woodchen-ink/Q58Bot/service/binance"
 	"github.com/woodchen-ink/Q58Bot/service/group_member_management"
 	"github.com/woodchen-ink/Q58Bot/service/link_filter"
 	"github.com/woodchen-ink/Q58Bot/service/prompt_reply"
@@ -73,7 +74,10 @@ func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter 
 		}
 	}
 
-	// 使用现有的 CheckAndReplyPrompt 函数进行提示词回复
+	// 调用 HandleSymbolQuery 处理虚拟币名查询
+	binance.HandleSymbolQuery(bot, message)
+
+	// 调用 CheckAndReplyPrompt 函数进行提示词回复
 	prompt_reply.CheckAndReplyPrompt(bot, message)
 }
 
@@ -150,40 +154,6 @@ func RunMessageHandler() error {
 //
 //
 
-const (
-	maxMessageLength = 4000
-)
-
-func SendLongMessage(bot *tgbotapi.BotAPI, chatID int64, prefix string, items []string) error {
-	message := prefix + "\n"
-	for i, item := range items {
-		newLine := fmt.Sprintf("%d. %s\n", i+1, item)
-		if len(message)+len(newLine) > maxMessageLength {
-			if err := sendMessage(bot, chatID, message); err != nil {
-				return err
-			}
-			message = ""
-		}
-		message += newLine
-	}
-
-	if message != "" {
-		return sendMessage(bot, chatID, message)
-	}
-
-	return nil
-}
-
-func sendMessage(bot *tgbotapi.BotAPI, chatID int64, text string) error {
-	msg := tgbotapi.NewMessage(chatID, text)
-	_, err := bot.Send(msg)
-	return err
-}
-
-func sendErrorMessage(bot *tgbotapi.BotAPI, chatID int64, errMsg string) {
-	sendMessage(bot, chatID, errMsg)
-}
-
 func HandleKeywordCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message, command string, args string) {
 	args = strings.TrimSpace(args)
 
@@ -197,60 +167,60 @@ func HandleKeywordCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message, comma
 	case "deletecontaining":
 		handleDeleteContainingKeyword(bot, message, args)
 	default:
-		sendErrorMessage(bot, message.Chat.ID, "无效的命令或参数。")
+		core.SendErrorMessage(bot, message.Chat.ID, "无效的命令或参数。")
 	}
 }
 
 func handleListKeywords(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	keywords, err := core.DB.GetAllKeywords()
 	if err != nil {
-		sendErrorMessage(bot, message.Chat.ID, "获取关键词列表时发生错误。")
+		core.SendErrorMessage(bot, message.Chat.ID, "获取关键词列表时发生错误。")
 		return
 	}
 	if len(keywords) == 0 {
-		sendMessage(bot, message.Chat.ID, "关键词列表为空。")
+		core.SendMessage(bot, message.Chat.ID, "关键词列表为空。")
 	} else {
-		SendLongMessage(bot, message.Chat.ID, "当前关键词列表：", keywords)
+		core.SendLongMessage(bot, message.Chat.ID, "当前关键词列表：", keywords)
 	}
 }
 
 func handleAddKeyword(bot *tgbotapi.BotAPI, message *tgbotapi.Message, keyword string) {
 	if keyword == "" {
-		sendErrorMessage(bot, message.Chat.ID, "请提供要添加的关键词。")
+		core.SendErrorMessage(bot, message.Chat.ID, "请提供要添加的关键词。")
 		return
 	}
 
 	exists, err := core.DB.KeywordExists(keyword)
 	if err != nil {
-		sendErrorMessage(bot, message.Chat.ID, "检查关键词时发生错误。")
+		core.SendErrorMessage(bot, message.Chat.ID, "检查关键词时发生错误。")
 		return
 	}
 	if !exists {
 		err = core.DB.AddKeyword(keyword)
 		if err != nil {
-			sendErrorMessage(bot, message.Chat.ID, "添加关键词时发生错误。")
+			core.SendErrorMessage(bot, message.Chat.ID, "添加关键词时发生错误。")
 		} else {
-			sendMessage(bot, message.Chat.ID, fmt.Sprintf("关键词 '%s' 已添加。", keyword))
+			core.SendMessage(bot, message.Chat.ID, fmt.Sprintf("关键词 '%s' 已添加。", keyword))
 		}
 	} else {
-		sendMessage(bot, message.Chat.ID, fmt.Sprintf("关键词 '%s' 已存在。", keyword))
+		core.SendMessage(bot, message.Chat.ID, fmt.Sprintf("关键词 '%s' 已存在。", keyword))
 	}
 }
 
 func handleDeleteKeyword(bot *tgbotapi.BotAPI, message *tgbotapi.Message, keyword string) {
 	if keyword == "" {
-		sendErrorMessage(bot, message.Chat.ID, "请提供要删除的关键词。")
+		core.SendErrorMessage(bot, message.Chat.ID, "请提供要删除的关键词。")
 		return
 	}
 
 	removed, err := core.DB.RemoveKeyword(keyword)
 	if err != nil {
-		sendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("删除关键词 '%s' 时发生错误: %v", keyword, err))
+		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("删除关键词 '%s' 时发生错误: %v", keyword, err))
 		return
 	}
 
 	if removed {
-		sendMessage(bot, message.Chat.ID, fmt.Sprintf("关键词 '%s' 已成功删除。", keyword))
+		core.SendMessage(bot, message.Chat.ID, fmt.Sprintf("关键词 '%s' 已成功删除。", keyword))
 	} else {
 		handleSimilarKeywords(bot, message, keyword)
 	}
@@ -259,31 +229,31 @@ func handleDeleteKeyword(bot *tgbotapi.BotAPI, message *tgbotapi.Message, keywor
 func handleSimilarKeywords(bot *tgbotapi.BotAPI, message *tgbotapi.Message, keyword string) {
 	similarKeywords, err := core.DB.SearchKeywords(keyword)
 	if err != nil {
-		sendErrorMessage(bot, message.Chat.ID, "搜索关键词时发生错误。")
+		core.SendErrorMessage(bot, message.Chat.ID, "搜索关键词时发生错误。")
 		return
 	}
 	if len(similarKeywords) > 0 {
-		SendLongMessage(bot, message.Chat.ID, fmt.Sprintf("未能删除关键词 '%s'。\n\n以下是相似的关键词：", keyword), similarKeywords)
+		core.SendLongMessage(bot, message.Chat.ID, fmt.Sprintf("未能删除关键词 '%s'。\n\n以下是相似的关键词：", keyword), similarKeywords)
 	} else {
-		sendMessage(bot, message.Chat.ID, fmt.Sprintf("未能删除关键词 '%s'，且未找到相似的关键词。", keyword))
+		core.SendMessage(bot, message.Chat.ID, fmt.Sprintf("未能删除关键词 '%s'，且未找到相似的关键词。", keyword))
 	}
 }
 
 func handleDeleteContainingKeyword(bot *tgbotapi.BotAPI, message *tgbotapi.Message, substring string) {
 	if substring == "" {
-		sendErrorMessage(bot, message.Chat.ID, "请提供要删除的子字符串。")
+		core.SendErrorMessage(bot, message.Chat.ID, "请提供要删除的子字符串。")
 		return
 	}
 
 	removedKeywords, err := core.DB.RemoveKeywordsContaining(substring)
 	if err != nil {
-		sendErrorMessage(bot, message.Chat.ID, "删除关键词时发生错误。")
+		core.SendErrorMessage(bot, message.Chat.ID, "删除关键词时发生错误。")
 		return
 	}
 	if len(removedKeywords) > 0 {
-		SendLongMessage(bot, message.Chat.ID, fmt.Sprintf("已删除包含 '%s' 的以下关键词：", substring), removedKeywords)
+		core.SendLongMessage(bot, message.Chat.ID, fmt.Sprintf("已删除包含 '%s' 的以下关键词：", substring), removedKeywords)
 	} else {
-		sendMessage(bot, message.Chat.ID, fmt.Sprintf("没有找到包含 '%s' 的关键词。", substring))
+		core.SendMessage(bot, message.Chat.ID, fmt.Sprintf("没有找到包含 '%s' 的关键词。", substring))
 	}
 }
 
@@ -298,90 +268,90 @@ func HandleWhitelistCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message, com
 	case "delwhite":
 		handleDeleteWhitelist(bot, message, args)
 	default:
-		sendErrorMessage(bot, message.Chat.ID, "无效的命令或参数。")
+		core.SendErrorMessage(bot, message.Chat.ID, "无效的命令或参数。")
 	}
 }
 
 func handleListWhitelist(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	whitelist, err := core.DB.GetAllWhitelist()
 	if err != nil {
-		sendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("获取白名单时发生错误: %v", err))
+		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("获取白名单时发生错误: %v", err))
 		return
 	}
 	if len(whitelist) == 0 {
-		sendMessage(bot, message.Chat.ID, "白名单为空。")
+		core.SendMessage(bot, message.Chat.ID, "白名单为空。")
 	} else {
-		SendLongMessage(bot, message.Chat.ID, "白名单域名列表：", whitelist)
+		core.SendLongMessage(bot, message.Chat.ID, "白名单域名列表：", whitelist)
 	}
 }
 
 func handleAddWhitelist(bot *tgbotapi.BotAPI, message *tgbotapi.Message, domain string) {
 	if domain == "" {
-		sendErrorMessage(bot, message.Chat.ID, "请提供要添加的域名。")
+		core.SendErrorMessage(bot, message.Chat.ID, "请提供要添加的域名。")
 		return
 	}
 
 	domain = strings.ToLower(domain)
 	exists, err := core.DB.WhitelistExists(domain)
 	if err != nil {
-		sendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("检查白名单时发生错误: %v", err))
+		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("检查白名单时发生错误: %v", err))
 		return
 	}
 	if exists {
-		sendMessage(bot, message.Chat.ID, fmt.Sprintf("域名 '%s' 已在白名单中。", domain))
+		core.SendMessage(bot, message.Chat.ID, fmt.Sprintf("域名 '%s' 已在白名单中。", domain))
 		return
 	}
 
 	err = core.DB.AddWhitelist(domain)
 	if err != nil {
-		sendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("添加到白名单时发生错误: %v", err))
+		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("添加到白名单时发生错误: %v", err))
 		return
 	}
 
 	exists, err = core.DB.WhitelistExists(domain)
 	if err != nil {
-		sendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("验证添加操作时发生错误: %v", err))
+		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("验证添加操作时发生错误: %v", err))
 		return
 	}
 	if exists {
-		sendMessage(bot, message.Chat.ID, fmt.Sprintf("域名 '%s' 已成功添加到白名单。", domain))
+		core.SendMessage(bot, message.Chat.ID, fmt.Sprintf("域名 '%s' 已成功添加到白名单。", domain))
 	} else {
-		sendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("未能添加域名 '%s' 到白名单。", domain))
+		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("未能添加域名 '%s' 到白名单。", domain))
 	}
 }
 
 func handleDeleteWhitelist(bot *tgbotapi.BotAPI, message *tgbotapi.Message, domain string) {
 	if domain == "" {
-		sendErrorMessage(bot, message.Chat.ID, "请提供要删除的域名。")
+		core.SendErrorMessage(bot, message.Chat.ID, "请提供要删除的域名。")
 		return
 	}
 
 	domain = strings.ToLower(domain)
 	exists, err := core.DB.WhitelistExists(domain)
 	if err != nil {
-		sendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("检查白名单时发生错误: %v", err))
+		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("检查白名单时发生错误: %v", err))
 		return
 	}
 	if !exists {
-		sendMessage(bot, message.Chat.ID, fmt.Sprintf("域名 '%s' 不在白名单中。", domain))
+		core.SendMessage(bot, message.Chat.ID, fmt.Sprintf("域名 '%s' 不在白名单中。", domain))
 		return
 	}
 
 	err = core.DB.RemoveWhitelist(domain)
 	if err != nil {
-		sendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("从白名单删除时发生错误: %v", err))
+		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("从白名单删除时发生错误: %v", err))
 		return
 	}
 
 	exists, err = core.DB.WhitelistExists(domain)
 	if err != nil {
-		sendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("验证删除操作时发生错误: %v", err))
+		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("验证删除操作时发生错误: %v", err))
 		return
 	}
 	if !exists {
-		sendMessage(bot, message.Chat.ID, fmt.Sprintf("域名 '%s' 已成功从白名单中删除。", domain))
+		core.SendMessage(bot, message.Chat.ID, fmt.Sprintf("域名 '%s' 已成功从白名单中删除。", domain))
 	} else {
-		sendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("未能从白名单中删除域名 '%s'。", domain))
+		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("未能从白名单中删除域名 '%s'。", domain))
 	}
 }
 

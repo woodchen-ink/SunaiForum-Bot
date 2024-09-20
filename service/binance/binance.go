@@ -118,6 +118,14 @@ func RunBinance() {
 	symbols = core.Symbols
 	singaporeTZ = core.SingaporeTZ
 
+	// 初始化并加载交易对
+	if err := LoadSymbols(); err != nil {
+		log.Fatalf("Failed to load trading pairs: %v", err)
+	}
+
+	// 启动每小时刷新交易对缓存
+	go StartSymbolRefresh(1 * time.Hour)
+
 	// 立即发送一次价格更新
 	sendPriceUpdate()
 
