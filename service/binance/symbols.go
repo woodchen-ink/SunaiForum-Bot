@@ -61,10 +61,14 @@ func StartSymbolRefresh(interval time.Duration) {
 // HandleSymbolQuery 处理虚拟币名查询
 func HandleSymbolQuery(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	symbols := GetAllSymbols()
-	upperMsg := strings.ToUpper(message.Text)
+	msg := strings.TrimSpace(message.Text)
 
 	for _, symbol := range symbols {
-		if strings.Contains(upperMsg, strings.TrimSuffix(symbol, "USDT")) {
+		// 移除USDT后缀
+		coinName := strings.TrimSuffix(symbol, "USDT")
+
+		// 不区分大小写的完全匹配检查
+		if strings.EqualFold(msg, coinName) {
 			info, err := getTickerInfo(symbol)
 			if err != nil {
 				log.Printf("Error getting ticker info for %s: %v", symbol, err)
@@ -74,9 +78,9 @@ func HandleSymbolQuery(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 				info.symbol,
 				info.last,
 				formatChange(info.changePercent))
-			msg := tgbotapi.NewMessage(message.Chat.ID, replyMessage)
-			msg.ParseMode = "Markdown"
-			bot.Send(msg)
+			replyMsg := tgbotapi.NewMessage(message.Chat.ID, replyMessage)
+			replyMsg.ParseMode = "Markdown"
+			bot.Send(replyMsg)
 			return
 		}
 	}
