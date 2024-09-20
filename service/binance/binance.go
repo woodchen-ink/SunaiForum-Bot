@@ -101,7 +101,7 @@ func sendPriceUpdate() {
 	msg.ParseMode = "Markdown"
 	sentMsg, err := bot.Send(msg)
 	if err != nil {
-		log.Printf("Failed to send message: %v", err)
+		log.Printf("Failed to send message. Error: %v\nFull message content:\nChat ID: %d\nMessage: %s", err, chatID, message)
 		return
 	}
 

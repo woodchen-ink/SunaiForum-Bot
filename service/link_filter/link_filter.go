@@ -186,14 +186,17 @@ func processLinks(links []string, linkFilter *LinkFilter) (bool, []string) {
 		}
 	}
 
-	if len(newNonWhitelistedLinks) > 0 {
-		logger.Printf("发现新的非白名单链接: %v", newNonWhitelistedLinks)
-	}
 	return false, newNonWhitelistedLinks
 }
 func (lf *LinkFilter) CheckAndFilterLink(bot *tgbotapi.BotAPI, message *tgbotapi.Message) bool {
 	// 判断消息是否应当被过滤及找出新的非白名单链接
 	shouldFilter, newLinks := ShouldFilter(message.Text, lf)
+
+	// 如果发现新的非白名单链接，记录日志
+	if len(newLinks) > 0 {
+		logger.Printf("发现新的非白名单链接: %v", newLinks)
+	}
+
 	if shouldFilter {
 		// 记录被过滤的消息
 		logger.Printf("消息应该被过滤: %s", message.Text)
@@ -216,12 +219,6 @@ func (lf *LinkFilter) CheckAndFilterLink(bot *tgbotapi.BotAPI, message *tgbotapi
 			core.DeleteMessageAfterDelay(bot, message.Chat.ID, sent.MessageID, 3*time.Minute)
 		}
 		return true
-	}
-
-	// 如果发现新的非白名单链接
-	if len(newLinks) > 0 {
-		// 记录新的非白名单链接
-		logger.Printf("发现新的非白名单链接: %v", newLinks)
 	}
 
 	return false
