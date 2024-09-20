@@ -105,14 +105,14 @@ func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter 
 		// 创建回复消息
 		replyMsg := tgbotapi.NewMessage(message.Chat.ID, reply)
 		replyMsg.ReplyToMessageID = message.MessageID
-		sent, err := bot.Send(replyMsg)
-		if err != nil {
-			// 发送回复失败时记录错误
-			log.Printf("未能发送及时回复: %v", err)
-		} else {
-			// 3分钟后删除回复消息
-			go deleteMessageAfterDelay(bot, message.Chat.ID, sent.MessageID, 3*time.Minute)
-		}
+		// sent, err := bot.Send(replyMsg)
+		// if err != nil {
+		// 	 发送回复失败时记录错误
+		// 	log.Printf("未能发送及时回复: %v", err)
+		// } else {
+		// 	// 3分钟后删除回复消息
+		// 	 go deleteMessageAfterDelay(bot, message.Chat.ID, sent.MessageID, 3*time.Minute)
+		// }
 	}
 }
 
