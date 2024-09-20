@@ -67,53 +67,14 @@ func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter 
 
 	// 如果不是管理员，才进行链接过滤
 	if !core.IsAdmin(message.From.ID) {
-		// 判断消息是否应当被过滤及找出新的非白名单链接
-		shouldFilter, newLinks := ShouldFilter(message.Text, linkFilter)
-		if shouldFilter {
-			// 记录被过滤的消息
-			log.Printf("消息应该被过滤: %s", message.Text)
-			// 删除原始消息
-			deleteMsg := tgbotapi.NewDeleteMessage(message.Chat.ID, message.MessageID)
-			_, err := bot.Request(deleteMsg)
-			if err != nil {
-				// 删除消息失败时记录错误
-				log.Printf("删除消息失败: %v", err)
-			}
-
-			// 发送提示消息
-			notification := tgbotapi.NewMessage(message.Chat.ID, "已撤回该消息。注:一个链接不能发两次.")
-			sent, err := bot.Send(notification)
-			if err != nil {
-				// 发送通知失败时记录错误
-				log.Printf("发送通知失败: %v", err)
-			} else {
-				// 3分钟后删除提示消息
-				go deleteMessageAfterDelay(bot, message.Chat.ID, sent.MessageID, 3*time.Minute)
-			}
-			// 结束处理
+		// 使用新的 CheckAndFilterLink 函数
+		if linkFilter.CheckAndFilterLink(bot, message) {
 			return
 		}
-		// 如果发现新的非白名单链接
-		if len(newLinks) > 0 {
-			// 记录新的非白名单链接
-			log.Printf("发现新的非白名单链接: %v", newLinks)
-		}
 	}
 
-	// 检查消息文本是否匹配预设的提示词并回复
-	if reply, found := prompt_reply.GetPromptReply(message.Text); found {
-		// 创建回复消息
-		replyMsg := tgbotapi.NewMessage(message.Chat.ID, reply)
-		replyMsg.ReplyToMessageID = message.MessageID
-		// sent, err := bot.Send(replyMsg)
-		// if err != nil {
-		// 	 发送回复失败时记录错误
-		// 	log.Printf("未能发送及时回复: %v", err)
-		// } else {
-		// 	// 3分钟后删除回复消息
-		// 	 go deleteMessageAfterDelay(bot, message.Chat.ID, sent.MessageID, 3*time.Minute)
-		// }
-	}
+	// 使用现有的 CheckAndReplyPrompt 函数进行提示词回复
+	prompt_reply.CheckAndReplyPrompt(bot, message)
 }
 
 func RunMessageHandler() error {
@@ -192,17 +153,6 @@ func RunMessageHandler() error {
 const (
 	maxMessageLength = 4000
 )
-
-func deleteMessageAfterDelay(bot *tgbotapi.BotAPI, chatID int64, messageID int, delay time.Duration) {
-	go func() {
-		time.Sleep(delay)
-		deleteMsg := tgbotapi.NewDeleteMessage(chatID, messageID)
-		_, err := bot.Request(deleteMsg)
-		if err != nil {
-			log.Printf("删除消息失败 (ChatID: %d, MessageID: %d): %v", chatID, messageID, err)
-		}
-	}()
-}
 
 func SendLongMessage(bot *tgbotapi.BotAPI, chatID int64, prefix string, items []string) error {
 	message := prefix + "\n"
@@ -435,80 +385,4 @@ func handleDeleteWhitelist(bot *tgbotapi.BotAPI, message *tgbotapi.Message, doma
 	}
 }
 
-func addNewKeyword(keyword string) error {
-	exists, err := core.DB.KeywordExists(keyword)
-	if err != nil {
-		return fmt.Errorf("检查关键词时发生错误: %v", err)
-	}
-	if !exists {
-		err = core.DB.AddKeyword(keyword)
-		if err != nil {
-			return fmt.Errorf("添加关键词时发生错误: %v", err)
-		}
-		logger.Printf("新关键词已添加: %s", keyword)
-	}
-	return nil
-}
-
 // ShouldFilter 检查消息是否包含关键词或者非白名单链接
-func ShouldFilter(text string, linkFilter *link_filter.LinkFilter) (bool, []string) {
-	logger.Printf("Checking text: %s", text)
-
-	if containsKeyword(text, linkFilter) {
-		return true, nil
-	}
-
-	links := extractLinks(text, linkFilter)
-	return processLinks(links, linkFilter)
-}
-
-func containsKeyword(text string, linkFilter *link_filter.LinkFilter) bool {
-	linkFilter.Mu.RLock()
-	defer linkFilter.Mu.RUnlock()
-
-	for _, keyword := range linkFilter.Keywords {
-		if strings.Contains(strings.ToLower(text), strings.ToLower(keyword)) {
-			logger.Printf("文字包含关键字: %s", keyword)
-			return true
-		}
-	}
-	return false
-}
-
-func extractLinks(text string, linkFilter *link_filter.LinkFilter) []string {
-	linkFilter.Mu.RLock()
-	defer linkFilter.Mu.RUnlock()
-
-	links := linkFilter.LinkPattern.FindAllString(text, -1)
-	logger.Printf("找到链接: %v", links)
-	return links
-}
-
-func processLinks(links []string, linkFilter *link_filter.LinkFilter) (bool, []string) {
-	var newNonWhitelistedLinks []string
-
-	for _, link := range links {
-		normalizedLink := linkFilter.NormalizeLink(link)
-		if !linkFilter.IsWhitelisted(normalizedLink) {
-			logger.Printf("链接未列入白名单: %s", normalizedLink)
-			if !containsKeyword(normalizedLink, linkFilter) {
-				newNonWhitelistedLinks = append(newNonWhitelistedLinks, normalizedLink)
-				err := addNewKeyword(normalizedLink)
-				if err != nil {
-					logger.Printf("添加关键词时发生错误: %v", err)
-				}
-				// 如果成功添加了新关键词，更新 linkFilter 的 Keywords
-				linkFilter.Mu.Lock()
-				linkFilter.Keywords = append(linkFilter.Keywords, normalizedLink)
-				linkFilter.Mu.Unlock()
-			} else {
-				return true, nil
-			}
-		}
-	}
-
-	if len(newNonWhitelistedLinks) > 0 {
-		logger.Printf("发现新的非白名单链接: %v", newNonWhitelistedLinks)
-	}
-	return false, newNonWhitelistedLinks
-}

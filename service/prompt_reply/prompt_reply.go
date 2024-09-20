@@ -88,12 +88,12 @@ func GetPromptReply(message string) (string, bool) {
 func ListPromptReplies() string {
 	replies, err := core.DB.GetAllPromptReplies()
 	if err != nil {
-		log.Printf("Error getting prompt replies: %v", err)
-		return "Error retrieving prompt replies"
+		log.Printf("获取及时回复时出错: %v", err)
+		return "检索提示回复时出错"
 	}
 
 	if len(replies) == 0 {
-		return "No prompt replies found"
+		return "没有找到提示回复"
 	}
 
 	var result strings.Builder

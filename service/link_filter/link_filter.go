@@ -7,7 +7,9 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/woodchen-ink/Q58Bot/core"
 )
 
@@ -113,5 +115,114 @@ func (lf *LinkFilter) IsWhitelisted(link string) bool {
 		}
 	}
 	logger.Printf("Whitelist check for %s: Failed", link)
+	return false
+}
+
+func addNewKeyword(keyword string) error {
+	exists, err := core.DB.KeywordExists(keyword)
+	if err != nil {
+		return fmt.Errorf("检查关键词时发生错误: %v", err)
+	}
+	if !exists {
+		err = core.DB.AddKeyword(keyword)
+		if err != nil {
+			return fmt.Errorf("添加关键词时发生错误: %v", err)
+		}
+		logger.Printf("新关键词已添加: %s", keyword)
+	}
+	return nil
+}
+func containsKeyword(text string, linkFilter *LinkFilter) bool {
+	linkFilter.Mu.RLock()
+	defer linkFilter.Mu.RUnlock()
+
+	for _, keyword := range linkFilter.Keywords {
+		if strings.Contains(strings.ToLower(text), strings.ToLower(keyword)) {
+			logger.Printf("文字包含关键字: %s", keyword)
+			return true
+		}
+	}
+	return false
+}
+
+func extractLinks(text string, linkFilter *LinkFilter) []string {
+	linkFilter.Mu.RLock()
+	defer linkFilter.Mu.RUnlock()
+
+	links := linkFilter.LinkPattern.FindAllString(text, -1)
+	logger.Printf("找到链接: %v", links)
+	return links
+}
+func ShouldFilter(text string, linkFilter *LinkFilter) (bool, []string) {
+	logger.Printf("Checking text: %s", text)
+
+	if containsKeyword(text, linkFilter) {
+		return true, nil
+	}
+
+	links := extractLinks(text, linkFilter)
+	return processLinks(links, linkFilter)
+}
+func processLinks(links []string, linkFilter *LinkFilter) (bool, []string) {
+	var newNonWhitelistedLinks []string
+
+	for _, link := range links {
+		normalizedLink := linkFilter.NormalizeLink(link)
+		if !linkFilter.IsWhitelisted(normalizedLink) {
+			logger.Printf("链接未列入白名单: %s", normalizedLink)
+			if !containsKeyword(normalizedLink, linkFilter) {
+				newNonWhitelistedLinks = append(newNonWhitelistedLinks, normalizedLink)
+				err := addNewKeyword(normalizedLink)
+				if err != nil {
+					logger.Printf("添加关键词时发生错误: %v", err)
+				}
+				// 如果成功添加了新关键词，更新 linkFilter 的 Keywords
+				linkFilter.Mu.Lock()
+				linkFilter.Keywords = append(linkFilter.Keywords, normalizedLink)
+				linkFilter.Mu.Unlock()
+			} else {
+				return true, nil
+			}
+		}
+	}
+
+	if len(newNonWhitelistedLinks) > 0 {
+		logger.Printf("发现新的非白名单链接: %v", newNonWhitelistedLinks)
+	}
+	return false, newNonWhitelistedLinks
+}
+func (lf *LinkFilter) CheckAndFilterLink(bot *tgbotapi.BotAPI, message *tgbotapi.Message) bool {
+	// 判断消息是否应当被过滤及找出新的非白名单链接
+	shouldFilter, newLinks := ShouldFilter(message.Text, lf)
+	if shouldFilter {
+		// 记录被过滤的消息
+		logger.Printf("消息应该被过滤: %s", message.Text)
+		// 删除原始消息
+		deleteMsg := tgbotapi.NewDeleteMessage(message.Chat.ID, message.MessageID)
+		_, err := bot.Request(deleteMsg)
+		if err != nil {
+			// 删除消息失败时记录错误
+			logger.Printf("删除消息失败: %v", err)
+		}
+
+		// 发送提示消息
+		notification := tgbotapi.NewMessage(message.Chat.ID, "已撤回该消息。注:一个链接不能发两次.")
+		sent, err := bot.Send(notification)
+		if err != nil {
+			// 发送通知失败时记录错误
+			logger.Printf("发送通知失败: %v", err)
+		} else {
+			// 3分钟后删除提示消息
+			core.DeleteMessageAfterDelay(bot, message.Chat.ID, sent.MessageID, 3*time.Minute)
+		}
+		return true
+	}
+
+	// 如果发现新的非白名单链接
+	if len(newLinks) > 0 {
+		// 记录新的非白名单链接
+		logger.Printf("发现新的非白名单链接: %v", newLinks)
+	}
+
 	return false
 }

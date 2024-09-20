@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -25,24 +24,7 @@ var (
 	DB          *Database
 )
 
-func IsAdmin(userID int64) bool {
-	return userID == ADMIN_ID
-}
-func mustParseInt64(s string) (int64, error) {
-	if s == "" {
-		return 0, fmt.Errorf("空字符串")
-	}
-
-	value, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("未能将'%s'解析为 int64: %v", s, err)
-	}
-
-	return value, nil
-}
 func Init() error {
-	var err error
-
 	// 从环境变量获取 BOT_TOKEN
 	BOT_TOKEN = os.Getenv("BOT_TOKEN")
 	if BOT_TOKEN == "" {
