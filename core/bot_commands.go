@@ -18,6 +18,7 @@ func RegisterCommands(bot *tgbotapi.BotAPI) error {
 		{Command: "delwhite", Description: "从白名单移除域名"},
 		{Command: "listwhite", Description: "列出白名单域名"},
 		{Command: "prompt", Description: "设置提示词回复"},
+		{Command: "prompt list", Description: "查看提示词列表"},
 	}
 
 	config := tgbotapi.NewSetMyCommands(commands...)

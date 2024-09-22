@@ -22,6 +22,8 @@ var (
 	singaporeTZ *time.Location
 )
 
+var logger = log.New(log.Writer(), "Binance: ", log.Ldate|log.Ltime|log.Lshortfile)
+
 type tickerInfo struct {
 	symbol        string
 	last          float64
@@ -78,7 +80,7 @@ func sendPriceUpdate() {
 	for _, symbol := range symbols {
 		info, err := getTickerInfo(symbol)
 		if err != nil {
-			log.Printf("Error getting ticker info for %s: %v", symbol, err)
+			logger.Printf("Error getting ticker info for %s: %v", symbol, err)
 			continue
 		}
 
@@ -93,7 +95,7 @@ func sendPriceUpdate() {
 		deleteMsg := tgbotapi.NewDeleteMessage(chatID, lastMsgID)
 		_, err := bot.Request(deleteMsg)
 		if err != nil {
-			log.Printf("Failed to delete previous message: %v", err)
+			logger.Printf("Failed to delete previous message: %v", err)
 		}
 	}
 
@@ -101,7 +103,7 @@ func sendPriceUpdate() {
 	msg.ParseMode = "Markdown"
 	sentMsg, err := bot.Send(msg)
 	if err != nil {
-		log.Printf("Failed to send message. Error: %v\nFull message content:\nChat ID: %d\nMessage: %s", err, chatID, message)
+		logger.Printf("Failed to send message. Error: %v\nFull message content:\nChat ID: %d\nMessage: %s", err, chatID, message)
 		return
 	}
 
@@ -109,7 +111,7 @@ func sendPriceUpdate() {
 }
 
 func RunBinance() {
-	log.Println("Starting Binance service...")
+	logger.Println("Starting Binance service...")
 
 	// 初始化必要的变量
 	botToken = core.BOT_TOKEN
@@ -120,7 +122,7 @@ func RunBinance() {
 
 	// 初始化并加载所有交易对
 	if err := LoadAllSymbols(); err != nil {
-		log.Fatalf("Failed to load all trading pairs: %v", err)
+		logger.Fatalf("Failed to load all trading pairs: %v", err)
 	}
 
 	// 启动每小时刷新交易对缓存
@@ -135,7 +137,7 @@ func RunBinance() {
 	for range ticker.C {
 		now := time.Now().In(singaporeTZ)
 		if now.Minute() == 0 {
-			log.Println("Sending hourly price update...")
+			logger.Println("Sending hourly price update...")
 			sendPriceUpdate()
 		}
 	}

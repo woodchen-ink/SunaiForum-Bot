@@ -31,7 +31,7 @@ func DeleteMessageAfterDelay(bot *tgbotapi.BotAPI, chatID int64, messageID int, 
 		deleteMsg := tgbotapi.NewDeleteMessage(chatID, messageID)
 		_, err := bot.Request(deleteMsg)
 		if err != nil {
-			log.Printf("删除消息失败 (ChatID: %d, MessageID: %d): %v", chatID, messageID, err)
+			log.Printf("DeleteMessageAfterDelay: 删除消息失败 (ChatID: %d, MessageID: %d): %v", chatID, messageID, err)
 		}
 	}()
 }

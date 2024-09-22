@@ -30,6 +30,7 @@ func handleListKeywords(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	keywords, err := core.DB.GetAllKeywords()
 	if err != nil {
 		core.SendErrorMessage(bot, message.Chat.ID, "获取关键词列表时发生错误。")
+		logger.Printf("Failed to get keywords: %v", err)
 		return
 	}
 
@@ -56,12 +57,14 @@ func handleAddKeyword(bot *tgbotapi.BotAPI, message *tgbotapi.Message, keyword s
 	exists, err := core.DB.KeywordExists(keyword)
 	if err != nil {
 		core.SendErrorMessage(bot, message.Chat.ID, "检查关键词时发生错误。")
+		logger.Printf("Failed to check keyword: %v", err)
 		return
 	}
 	if !exists {
 		err = core.DB.AddKeyword(keyword)
 		if err != nil {
 			core.SendErrorMessage(bot, message.Chat.ID, "添加关键词时发生错误。")
+			logger.Printf("Failed to add keyword: %v", err)
 		} else {
 			core.SendMessage(bot, message.Chat.ID, fmt.Sprintf("关键词 '%s' 已添加。", keyword))
 		}
@@ -79,6 +82,7 @@ func handleDeleteKeyword(bot *tgbotapi.BotAPI, message *tgbotapi.Message, keywor
 	removed, err := core.DB.RemoveKeyword(keyword)
 	if err != nil {
 		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("删除关键词 '%s' 时发生错误: %v", keyword, err))
+		logger.Printf("Failed to remove keyword '%s': %v", keyword, err)
 		return
 	}
 
@@ -93,6 +97,7 @@ func handleSimilarKeywords(bot *tgbotapi.BotAPI, message *tgbotapi.Message, keyw
 	similarKeywords, err := core.DB.SearchKeywords(keyword)
 	if err != nil {
 		core.SendErrorMessage(bot, message.Chat.ID, "搜索关键词时发生错误。")
+		logger.Printf("Failed to search keywords: %v", err)
 		return
 	}
 	if len(similarKeywords) > 0 {
@@ -111,6 +116,7 @@ func handleDeleteContainingKeyword(bot *tgbotapi.BotAPI, message *tgbotapi.Messa
 	removedKeywords, err := core.DB.RemoveKeywordsContaining(substring)
 	if err != nil {
 		core.SendErrorMessage(bot, message.Chat.ID, "删除关键词时发生错误。")
+		logger.Printf("Failed to remove keywords: %v", err)
 		return
 	}
 	if len(removedKeywords) > 0 {
@@ -139,6 +145,7 @@ func handleListWhitelist(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	whitelist, err := core.DB.GetAllWhitelist()
 	if err != nil {
 		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("获取白名单时发生错误: %v", err))
+		logger.Printf("Failed to get whitelist: %v", err)
 		return
 	}
 	if len(whitelist) == 0 {
@@ -158,6 +165,7 @@ func handleAddWhitelist(bot *tgbotapi.BotAPI, message *tgbotapi.Message, domain 
 	exists, err := core.DB.WhitelistExists(domain)
 	if err != nil {
 		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("检查白名单时发生错误: %v", err))
+		logger.Printf("Failed to check whitelist: %v", err)
 		return
 	}
 	if exists {
@@ -168,12 +176,14 @@ func handleAddWhitelist(bot *tgbotapi.BotAPI, message *tgbotapi.Message, domain 
 	err = core.DB.AddWhitelist(domain)
 	if err != nil {
 		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("添加到白名单时发生错误: %v", err))
+		logger.Printf("Failed to add to whitelist: %v", err)
 		return
 	}
 
 	exists, err = core.DB.WhitelistExists(domain)
 	if err != nil {
 		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("验证添加操作时发生错误: %v", err))
+		logger.Printf("Failed to verify add operation: %v", err)
 		return
 	}
 	if exists {
@@ -193,6 +203,7 @@ func handleDeleteWhitelist(bot *tgbotapi.BotAPI, message *tgbotapi.Message, doma
 	exists, err := core.DB.WhitelistExists(domain)
 	if err != nil {
 		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("检查白名单时发生错误: %v", err))
+		logger.Printf("Failed to check whitelist: %v", err)
 		return
 	}
 	if !exists {
@@ -203,12 +214,14 @@ func handleDeleteWhitelist(bot *tgbotapi.BotAPI, message *tgbotapi.Message, doma
 	err = core.DB.RemoveWhitelist(domain)
 	if err != nil {
 		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("从白名单删除时发生错误: %v", err))
+		logger.Printf("Failed to remove from whitelist: %v", err)
 		return
 	}
 
 	exists, err = core.DB.WhitelistExists(domain)
 	if err != nil {
 		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("验证删除操作时发生错误: %v", err))
+		logger.Printf("Failed to verify delete operation: %v", err)
 		return
 	}
 	if !exists {

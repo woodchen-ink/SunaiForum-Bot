@@ -57,7 +57,8 @@ func handleAdminCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 // processMessage 处理群里接收到的消息。
 func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter *link_filter.LinkFilter) {
 	// 记录消息内容
-	log.Printf("Processing message: %s", message.Text)
+	// log.Printf("Processing message: %s", message.Text)
+	logger.Printf("Processing message: %s", message.Text)
 
 	// 处理 /ban 命令
 	if message.ReplyToMessage != nil && message.Text == "/ban" {
@@ -81,12 +82,12 @@ func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter 
 }
 
 func RunMessageHandler() error {
-	log.Println("消息处理器启动...")
+	logger.Println("消息处理器启动...")
 
 	// 加载提示回复数据
 	err := prompt_reply.Manager.LoadDataFromDatabase()
 	if err != nil {
-		log.Printf("加载提示回复数据失败: %v", err)
+		logger.Printf("加载提示回复数据失败: %v", err)
 		// 考虑是否要因为这个错误停止启动
 		// return fmt.Errorf("加载提示回复数据失败: %w", err)
 	}
@@ -97,7 +98,7 @@ func RunMessageHandler() error {
 
 	for {
 		err := func() error {
-			log.Printf("Attempting to create bot with token: %s", core.BOT_TOKEN)
+			logger.Printf("Attempting to create bot with token: %s", core.BOT_TOKEN)
 			bot, err := tgbotapi.NewBotAPI(core.BOT_TOKEN)
 			if err != nil {
 				log.Printf("Error details: %+v", err)
@@ -106,7 +107,7 @@ func RunMessageHandler() error {
 
 			bot.Debug = core.DEBUG_MODE
 
-			log.Printf("Authorized on account %s", bot.Self.UserName)
+			logger.Printf("Authorized on account %s", bot.Self.UserName)
 
 			err = core.RegisterCommands(bot)
 			if err != nil {
@@ -143,7 +144,7 @@ func RunMessageHandler() error {
 			}
 		} else {
 			delay = baseDelay
-			log.Println("Bot disconnected. Attempting to restart immediately...")
+			logger.Println("Bot disconnected. Attempting to restart immediately...")
 		}
 	}
 }
