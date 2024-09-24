@@ -3,7 +3,7 @@ module github.com/woodchen-ink/Q58Bot
 go 1.21.3
 
 require (
-	github.com/adshao/go-binance/v2 v2.6.0
+	github.com/adshao/go-binance/v2 v2.6.1
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	modernc.org/sqlite v1.33.1
 )
