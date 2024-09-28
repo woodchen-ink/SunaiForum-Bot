@@ -44,15 +44,15 @@ func NewDatabase() (*Database, error) {
 
 func (d *Database) createTables() error {
 	queries := []string{
-		`CREATE TABLE IF NOT EXISTS keywords_new (
+		`CREATE TABLE IF NOT EXISTS keywords (
             id INTEGER PRIMARY KEY,
             keyword TEXT UNIQUE,
             is_link BOOLEAN DEFAULT FALSE,
             is_auto_added BOOLEAN DEFAULT FALSE,
             added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`,
-		`CREATE INDEX IF NOT EXISTS idx_keyword ON keywords_new(keyword)`,
-		`CREATE INDEX IF NOT EXISTS idx_added_at ON keywords_new(added_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_keyword ON keywords(keyword)`,
+		`CREATE INDEX IF NOT EXISTS idx_added_at ON keywords(added_at)`,
 		`CREATE TABLE IF NOT EXISTS whitelist (
 					id INTEGER PRIMARY KEY,
 					domain TEXT UNIQUE
@@ -405,8 +405,6 @@ func (d *Database) MigrateExistingKeywords() error {
 			if contains(columns, col) {
 				insertColumns = append(insertColumns, col)
 				selectColumns = append(selectColumns, col)
-			} else {
-				selectColumns = append(selectColumns, "FALSE")
 			}
 		}
 
@@ -427,12 +425,18 @@ func (d *Database) MigrateExistingKeywords() error {
 		if err != nil {
 			return err
 		}
-	}
-
-	// 重命名新表
-	_, err = d.db.Exec("ALTER TABLE keywords_new RENAME TO keywords")
-	if err != nil {
-		return err
+	} else {
+		// 如果旧表不存在，创建一个空的新表
+		_, err = d.db.Exec(`CREATE TABLE IF NOT EXISTS keywords (
+					id INTEGER PRIMARY KEY,
+					keyword TEXT UNIQUE,
+					is_link BOOLEAN DEFAULT FALSE,
+					is_auto_added BOOLEAN DEFAULT FALSE,
+					added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			)`)
+		if err != nil {
+			return err
+		}
 	}
 
 	// 更新配置，标记迁移已完成
