@@ -4,6 +4,7 @@ package core
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,12 +46,12 @@ func NewDatabase() (*Database, error) {
 func (d *Database) createTables() error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS keywords (
-            id INTEGER PRIMARY KEY,
-            keyword TEXT UNIQUE,
-            is_link BOOLEAN DEFAULT FALSE,
-            is_auto_added BOOLEAN DEFAULT FALSE,
-            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )`,
+					id INTEGER PRIMARY KEY,
+					keyword TEXT UNIQUE,
+					is_link BOOLEAN DEFAULT FALSE,
+					is_auto_added BOOLEAN DEFAULT FALSE,
+					added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			)`,
 		`CREATE INDEX IF NOT EXISTS idx_keyword ON keywords(keyword)`,
 		`CREATE INDEX IF NOT EXISTS idx_added_at ON keywords(added_at)`,
 		`CREATE TABLE IF NOT EXISTS whitelist (
@@ -71,10 +72,11 @@ func (d *Database) createTables() error {
 	for _, query := range queries {
 		_, err := d.db.Exec(query)
 		if err != nil {
-			return err
+			return fmt.Errorf("执行查询失败 '%s': %v", query, err)
 		}
 	}
 
+	log.Println("所有必要的表都已创建")
 	return nil
 }
 
@@ -461,17 +463,20 @@ func contains(slice []string, str string) bool {
 func (d *Database) EnsureTablesExist() error {
 	tables := []string{"keywords", "whitelist", "prompt_replies", "config"}
 	for _, table := range tables {
-		var exists bool
-		err := d.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&exists)
-		if err != nil && err != sql.ErrNoRows {
-			return err
-		}
-		if !exists {
-			if err := d.createTables(); err != nil {
-				return err
+		var name string
+		err := d.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				// 表不存在，创建所有表
+				if err := d.createTables(); err != nil {
+					return fmt.Errorf("创建表失败: %v", err)
+				}
+				log.Printf("创建了缺失的表: %s", table)
+				return nil // 所有表都已创建，无需继续检查
 			}
-			break
+			return fmt.Errorf("检查表 %s 是否存在时出错: %v", table, err)
 		}
+		log.Printf("表 %s 已存在", table)
 	}
 	return nil
 }

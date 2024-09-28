@@ -45,20 +45,15 @@ func Init() error {
 		return fmt.Errorf("初始化数据库失败: %v", err)
 	}
 
-	// 确保表已创建
-	err = DB.createTables()
-	if err != nil {
-		return fmt.Errorf("创建数据库表失败: %v", err)
+	// 确保所有必要的表都存在
+	if err := DB.EnsureTablesExist(); err != nil {
+		return fmt.Errorf("确保数据库表存在失败: %v", err)
 	}
 
 	// 执行数据迁移
 	err = DB.MigrateExistingKeywords()
 	if err != nil {
 		return fmt.Errorf("迁移现有关键词失败: %v", err)
-	}
-
-	if err := DB.EnsureTablesExist(); err != nil {
-		return fmt.Errorf("确保数据库表存在失败: %v", err)
 	}
 
 	// 从环境变量中读取调试模式设置
