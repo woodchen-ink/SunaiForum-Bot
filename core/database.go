@@ -43,15 +43,15 @@ func NewDatabase() (*Database, error) {
 
 func (d *Database) createTables() error {
 	queries := []string{
-		`CREATE TABLE IF NOT EXISTS keywords (
+		`CREATE TABLE IF NOT EXISTS keywords_new (
 					id INTEGER PRIMARY KEY,
 					keyword TEXT UNIQUE,
 					is_link BOOLEAN DEFAULT FALSE,
 					is_auto_added BOOLEAN DEFAULT FALSE,
 					added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 			)`,
-		`CREATE INDEX IF NOT EXISTS idx_keyword ON keywords(keyword)`,
-		`CREATE INDEX IF NOT EXISTS idx_added_at ON keywords(added_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_keyword ON keywords_new(keyword)`,
+		`CREATE INDEX IF NOT EXISTS idx_added_at ON keywords_new(added_at)`,
 		`CREATE TABLE IF NOT EXISTS whitelist (
 					id INTEGER PRIMARY KEY,
 					domain TEXT UNIQUE
@@ -370,54 +370,35 @@ func (d *Database) MigrateExistingKeywords() error {
 	}
 
 	// 检查旧表是否存在
-	var tableExists bool
-	err = d.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='keywords'").Scan(&tableExists)
+	var oldTableExists bool
+	err = d.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='keywords'").Scan(&oldTableExists)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
 
-	if tableExists {
-		// 检查 added_at 列是否存在
-		var columnExists bool
-		err = d.db.QueryRow("SELECT 1 FROM pragma_table_info('keywords') WHERE name='added_at'").Scan(&columnExists)
-		if err != nil && err != sql.ErrNoRows {
+	if oldTableExists {
+		// 迁移数据
+		_, err = d.db.Exec(`INSERT OR IGNORE INTO keywords_new (keyword, is_link, is_auto_added, added_at)
+													SELECT keyword, 
+																 COALESCE(is_link, FALSE), 
+																 COALESCE(is_auto_added, FALSE), 
+																 COALESCE(added_at, CURRENT_TIMESTAMP) 
+													FROM keywords`)
+		if err != nil {
 			return err
 		}
 
-		if !columnExists {
-			// 如果 added_at 列不存在，添加它
-			_, err = d.db.Exec("ALTER TABLE keywords ADD COLUMN added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-			if err != nil {
-				return err
-			}
-		}
-
-		// 检查 is_link 和 is_auto_added 列是否存在
-		err = d.db.QueryRow("SELECT 1 FROM pragma_table_info('keywords') WHERE name='is_link'").Scan(&columnExists)
-		if err != nil && err != sql.ErrNoRows {
+		// 删除旧表
+		_, err = d.db.Exec("DROP TABLE keywords")
+		if err != nil {
 			return err
 		}
+	}
 
-		if !columnExists {
-			// 如果 is_link 列不存在，添加它
-			_, err = d.db.Exec("ALTER TABLE keywords ADD COLUMN is_link BOOLEAN DEFAULT FALSE")
-			if err != nil {
-				return err
-			}
-		}
-
-		err = d.db.QueryRow("SELECT 1 FROM pragma_table_info('keywords') WHERE name='is_auto_added'").Scan(&columnExists)
-		if err != nil && err != sql.ErrNoRows {
-			return err
-		}
-
-		if !columnExists {
-			// 如果 is_auto_added 列不存在，添加它
-			_, err = d.db.Exec("ALTER TABLE keywords ADD COLUMN is_auto_added BOOLEAN DEFAULT FALSE")
-			if err != nil {
-				return err
-			}
-		}
+	// 重命名新表
+	_, err = d.db.Exec("ALTER TABLE keywords_new RENAME TO keywords")
+	if err != nil {
+		return err
 	}
 
 	// 更新配置，标记迁移已完成
