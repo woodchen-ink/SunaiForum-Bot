@@ -116,6 +116,7 @@ func RunMessageHandler() error {
 
 			linkFilter, err := link_filter.NewLinkFilter()
 			if err != nil {
+				log.Printf("Failed to create LinkFilter: %v", err)
 				return fmt.Errorf("failed to create LinkFilter: %v", err)
 			}
 

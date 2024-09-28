@@ -28,7 +28,7 @@ func NewLinkFilter() (*LinkFilter, error) {
 	}
 
 	if err := lf.LoadDataFromDatabase(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load data from database: %v", err)
 	}
 
 	return lf, nil
@@ -41,12 +41,12 @@ func (lf *LinkFilter) LoadDataFromDatabase() error {
 	var err error
 	lf.Keywords, err = core.DB.GetAllKeywords()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get keywords: %v", err)
 	}
 
 	lf.Whitelist, err = core.DB.GetAllWhitelist()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get whitelist: %v", err)
 	}
 
 	logger.Printf("Loaded %d Keywords and %d Whitelist entries from database", len(lf.Keywords), len(lf.Whitelist))

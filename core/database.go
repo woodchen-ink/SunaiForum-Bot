@@ -457,3 +457,21 @@ func contains(slice []string, str string) bool {
 	}
 	return false
 }
+
+func (d *Database) EnsureTablesExist() error {
+	tables := []string{"keywords", "whitelist", "prompt_replies", "config"}
+	for _, table := range tables {
+		var exists bool
+		err := d.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&exists)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		if !exists {
+			if err := d.createTables(); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	return nil
+}
