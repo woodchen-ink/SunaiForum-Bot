@@ -43,17 +43,28 @@ func NewDatabase() (*Database, error) {
 
 func (d *Database) createTables() error {
 	queries := []string{
-		`CREATE TABLE IF NOT EXISTS keywords
-             (id INTEGER PRIMARY KEY, keyword TEXT UNIQUE, is_link BOOLEAN, is_auto_added BOOLEAN, added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+		`CREATE TABLE IF NOT EXISTS keywords (
+					id INTEGER PRIMARY KEY,
+					keyword TEXT UNIQUE,
+					is_link BOOLEAN DEFAULT FALSE,
+					is_auto_added BOOLEAN DEFAULT FALSE,
+					added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			)`,
 		`CREATE INDEX IF NOT EXISTS idx_keyword ON keywords(keyword)`,
 		`CREATE INDEX IF NOT EXISTS idx_added_at ON keywords(added_at)`,
-		`CREATE INDEX IF NOT EXISTS idx_is_link ON keywords(is_link)`,
-		`CREATE INDEX IF NOT EXISTS idx_is_auto_added ON keywords(is_auto_added)`,
-		`CREATE TABLE IF NOT EXISTS whitelist
-			 (id INTEGER PRIMARY KEY, domain TEXT UNIQUE)`,
+		`CREATE TABLE IF NOT EXISTS whitelist (
+					id INTEGER PRIMARY KEY,
+					domain TEXT UNIQUE
+			)`,
 		`CREATE INDEX IF NOT EXISTS idx_domain ON whitelist(domain)`,
-		`CREATE TABLE IF NOT EXISTS prompt_replies
-             (prompt TEXT PRIMARY KEY, reply TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS prompt_replies (
+					prompt TEXT PRIMARY KEY,
+					reply TEXT NOT NULL
+			)`,
+		`CREATE TABLE IF NOT EXISTS config (
+					key TEXT PRIMARY KEY,
+					value TEXT
+			)`,
 	}
 
 	for _, query := range queries {
@@ -358,85 +369,60 @@ func (d *Database) MigrateExistingKeywords() error {
 		return nil // 迁移已经完成，无需再次执行
 	}
 
-	// 开始事务
-	tx, err := d.db.Begin()
-	if err != nil {
+	// 检查旧表是否存在
+	var tableExists bool
+	err = d.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='keywords'").Scan(&tableExists)
+	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
-	defer tx.Rollback()
 
-	// 获取所有现有的关键词
-	rows, err := tx.Query("SELECT keyword FROM keywords")
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	// 准备插入语句
-	stmt, err := tx.Prepare("INSERT INTO keywords (keyword, is_link, is_auto_added) VALUES (?, ?, ?)")
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	// 迁移现有关键词
-	for rows.Next() {
-		var keyword string
-		if err := rows.Scan(&keyword); err != nil {
+	if tableExists {
+		// 检查 added_at 列是否存在
+		var columnExists bool
+		err = d.db.QueryRow("SELECT 1 FROM pragma_table_info('keywords') WHERE name='added_at'").Scan(&columnExists)
+		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
 
-		// 这里我们假设所有现有的关键词都是手动添加的非链接关键词
-		_, err = stmt.Exec(keyword, false, false)
-		if err != nil {
+		if !columnExists {
+			// 如果 added_at 列不存在，添加它
+			_, err = d.db.Exec("ALTER TABLE keywords ADD COLUMN added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+			if err != nil {
+				return err
+			}
+		}
+
+		// 检查 is_link 和 is_auto_added 列是否存在
+		err = d.db.QueryRow("SELECT 1 FROM pragma_table_info('keywords') WHERE name='is_link'").Scan(&columnExists)
+		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
-	}
 
-	// 删除旧的关键词表
-	_, err = tx.Exec("DROP TABLE IF EXISTS old_keywords")
-	if err != nil {
-		return err
-	}
+		if !columnExists {
+			// 如果 is_link 列不存在，添加它
+			_, err = d.db.Exec("ALTER TABLE keywords ADD COLUMN is_link BOOLEAN DEFAULT FALSE")
+			if err != nil {
+				return err
+			}
+		}
 
-	// 重命名现有的关键词表
-	_, err = tx.Exec("ALTER TABLE keywords RENAME TO old_keywords")
-	if err != nil {
-		return err
-	}
+		err = d.db.QueryRow("SELECT 1 FROM pragma_table_info('keywords') WHERE name='is_auto_added'").Scan(&columnExists)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
 
-	// 创建新的关键词表
-	_, err = tx.Exec(`CREATE TABLE keywords (
-			id INTEGER PRIMARY KEY,
-			keyword TEXT UNIQUE,
-			is_link BOOLEAN,
-			is_auto_added BOOLEAN,
-			added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	)`)
-	if err != nil {
-		return err
-	}
-
-	// 将数据从旧表复制到新表
-	_, err = tx.Exec("INSERT INTO keywords SELECT id, keyword, is_link, is_auto_added, added_at FROM old_keywords")
-	if err != nil {
-		return err
-	}
-
-	// 删除旧表
-	_, err = tx.Exec("DROP TABLE old_keywords")
-	if err != nil {
-		return err
+		if !columnExists {
+			// 如果 is_auto_added 列不存在，添加它
+			_, err = d.db.Exec("ALTER TABLE keywords ADD COLUMN is_auto_added BOOLEAN DEFAULT FALSE")
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	// 更新配置，标记迁移已完成
-	_, err = tx.Exec("INSERT OR REPLACE INTO config (key, value) VALUES ('keywords_migrated', 'true')")
+	_, err = d.db.Exec("INSERT OR REPLACE INTO config (key, value) VALUES ('keywords_migrated', 'true')")
 	if err != nil {
-		return err
-	}
-
-	// 提交事务
-	if err := tx.Commit(); err != nil {
 		return err
 	}
 

@@ -45,6 +45,12 @@ func Init() error {
 		return fmt.Errorf("初始化数据库失败: %v", err)
 	}
 
+	// 确保表已创建
+	err = DB.createTables()
+	if err != nil {
+		return fmt.Errorf("创建数据库表失败: %v", err)
+	}
+
 	// 执行数据迁移
 	err = DB.MigrateExistingKeywords()
 	if err != nil {
