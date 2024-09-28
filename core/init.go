@@ -50,10 +50,19 @@ func Init() error {
 		return fmt.Errorf("确保数据库表存在失败: %v", err)
 	}
 
-	// 执行数据迁移
-	err = DB.MigrateExistingKeywords()
+	// 检查并报告表中的记录数
+	keywordCount, err := DB.CountRecords("keywords")
 	if err != nil {
-		return fmt.Errorf("迁移现有关键词失败: %v", err)
+		log.Printf("检查 keywords 表记录数时出错: %v", err)
+	} else {
+		log.Printf("keywords 表中有 %d 条记录", keywordCount)
+	}
+
+	whitelistCount, err := DB.CountRecords("whitelist")
+	if err != nil {
+		log.Printf("检查 whitelist 表记录数时出错: %v", err)
+	} else {
+		log.Printf("whitelist 表中有 %d 条记录", whitelistCount)
 	}
 
 	// 从环境变量中读取调试模式设置

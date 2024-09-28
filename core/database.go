@@ -344,122 +344,6 @@ func (d *Database) Close() error {
 	return d.db.Close()
 }
 
-// 迁移现有关键词
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-
-func (d *Database) MigrateExistingKeywords() error {
-	// 检查是否已经执行过迁移
-	var migrationDone string
-	err := d.db.QueryRow("SELECT value FROM config WHERE key = 'keywords_migrated'").Scan(&migrationDone)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-
-	if migrationDone == "true" {
-		return nil // 迁移已经完成，无需再次执行
-	}
-
-	// 检查旧表是否存在
-	var oldTableName string
-	err = d.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='keywords'").Scan(&oldTableName)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-
-	if oldTableName == "keywords" {
-		// 获取旧表的列信息
-		rows, err := d.db.Query("PRAGMA table_info(keywords)")
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-
-		var columns []string
-		for rows.Next() {
-			var cid int
-			var name, type_ string
-			var notnull, pk int
-			var dflt_value interface{}
-			err = rows.Scan(&cid, &name, &type_, &notnull, &dflt_value, &pk)
-			if err != nil {
-				return err
-			}
-			columns = append(columns, name)
-		}
-
-		// 构建插入语句
-		insertColumns := []string{"keyword"}
-		selectColumns := []string{"keyword"}
-		for _, col := range []string{"is_link", "is_auto_added", "added_at"} {
-			if contains(columns, col) {
-				insertColumns = append(insertColumns, col)
-				selectColumns = append(selectColumns, col)
-			}
-		}
-
-		// 迁移数据
-		query := fmt.Sprintf(`INSERT OR IGNORE INTO keywords_new (%s)
-														SELECT %s
-														FROM keywords`,
-			strings.Join(insertColumns, ", "),
-			strings.Join(selectColumns, ", "))
-
-		_, err = d.db.Exec(query)
-		if err != nil {
-			return err
-		}
-
-		// 删除旧表
-		_, err = d.db.Exec("DROP TABLE keywords")
-		if err != nil {
-			return err
-		}
-	} else {
-		// 如果旧表不存在，创建一个空的新表
-		_, err = d.db.Exec(`CREATE TABLE IF NOT EXISTS keywords (
-					id INTEGER PRIMARY KEY,
-					keyword TEXT UNIQUE,
-					is_link BOOLEAN DEFAULT FALSE,
-					is_auto_added BOOLEAN DEFAULT FALSE,
-					added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-			)`)
-		if err != nil {
-			return err
-		}
-	}
-
-	// 更新配置，标记迁移已完成
-	_, err = d.db.Exec("INSERT OR REPLACE INTO config (key, value) VALUES ('keywords_migrated', 'true')")
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// 辅助函数：检查切片中是否包含特定字符串
-func contains(slice []string, str string) bool {
-	for _, v := range slice {
-		if v == str {
-			return true
-		}
-	}
-	return false
-}
-
 func (d *Database) EnsureTablesExist() error {
 	tables := []string{"keywords", "whitelist", "prompt_replies", "config"}
 	for _, table := range tables {
@@ -479,4 +363,13 @@ func (d *Database) EnsureTablesExist() error {
 		log.Printf("表 %s 已存在", table)
 	}
 	return nil
+}
+
+func (d *Database) CountRecords(tableName string) (int, error) {
+	var count int
+	err := d.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
