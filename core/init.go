@@ -45,6 +45,12 @@ func Init() error {
 		return fmt.Errorf("初始化数据库失败: %v", err)
 	}
 
+	// 执行数据迁移
+	err = DB.MigrateExistingKeywords()
+	if err != nil {
+		return fmt.Errorf("迁移现有关键词失败: %v", err)
+	}
+
 	// 从环境变量中读取调试模式设置
 	DEBUG_MODE = os.Getenv("DEBUG_MODE") == "true"
 

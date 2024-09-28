@@ -27,23 +27,41 @@ func HandleKeywordCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message, comma
 }
 
 func handleListKeywords(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	keywords, err := core.DB.GetAllKeywords()
+	manualKeywords, err := core.DB.GetAllManualKeywords()
 	if err != nil {
-		core.SendErrorMessage(bot, message.Chat.ID, "获取关键词列表时发生错误。")
-		logger.Printf("Failed to get keywords: %v", err)
+		core.SendErrorMessage(bot, message.Chat.ID, "获取手动添加的关键词列表时发生错误。")
+		logger.Printf("Failed to get manual keywords: %v", err)
 		return
 	}
 
-	if len(keywords) == 0 {
-		core.SendMessage(bot, message.Chat.ID, "关键词列表为空。")
-	} else {
-		// 对关键词进行排序
-		sort.Strings(keywords)
+	autoAddedLinks, err := core.DB.GetAllAutoAddedLinks()
+	if err != nil {
+		core.SendErrorMessage(bot, message.Chat.ID, "获取自动添加的链接列表时发生错误。")
+		logger.Printf("Failed to get auto-added links: %v", err)
+		return
+	}
 
-		// 直接发送排序后的关键词列表
-		err := core.SendLongMessage(bot, message.Chat.ID, "当前关键词列表（按字母顺序排序）：", keywords)
-		if err != nil {
-			core.SendErrorMessage(bot, message.Chat.ID, "发送关键词列表时发生错误。")
+	if len(manualKeywords) == 0 && len(autoAddedLinks) == 0 {
+		core.SendMessage(bot, message.Chat.ID, "关键词和链接列表为空。")
+	} else {
+		// 对关键词和链接进行排序
+		sort.Strings(manualKeywords)
+		sort.Strings(autoAddedLinks)
+
+		// 发送手动添加的关键词列表
+		if len(manualKeywords) > 0 {
+			err := core.SendLongMessage(bot, message.Chat.ID, "手动添加的关键词列表（按字母顺序排序）：", manualKeywords)
+			if err != nil {
+				core.SendErrorMessage(bot, message.Chat.ID, "发送手动添加的关键词列表时发生错误。")
+			}
+		}
+
+		// 发送自动添加的链接列表
+		if len(autoAddedLinks) > 0 {
+			err := core.SendLongMessage(bot, message.Chat.ID, "自动添加的链接列表（按字母顺序排序）：", autoAddedLinks)
+			if err != nil {
+				core.SendErrorMessage(bot, message.Chat.ID, "发送自动添加的链接列表时发生错误。")
+			}
 		}
 	}
 }
@@ -61,7 +79,7 @@ func handleAddKeyword(bot *tgbotapi.BotAPI, message *tgbotapi.Message, keyword s
 		return
 	}
 	if !exists {
-		err = core.DB.AddKeyword(keyword)
+		err = core.DB.AddKeyword(keyword, false, false) // isLink = false, isAutoAdded = false
 		if err != nil {
 			core.SendErrorMessage(bot, message.Chat.ID, "添加关键词时发生错误。")
 			logger.Printf("Failed to add keyword: %v", err)

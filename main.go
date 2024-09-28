@@ -23,4 +23,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error in RunMessageHandler: %v", err)
 	}
+
+	// 启动定期任务
+	service.StartScheduledTasks()
 }

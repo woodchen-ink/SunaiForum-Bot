@@ -44,8 +44,11 @@ func NewDatabase() (*Database, error) {
 func (d *Database) createTables() error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS keywords
-			 (id INTEGER PRIMARY KEY, keyword TEXT UNIQUE)`,
+             (id INTEGER PRIMARY KEY, keyword TEXT UNIQUE, is_link BOOLEAN, is_auto_added BOOLEAN, added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
 		`CREATE INDEX IF NOT EXISTS idx_keyword ON keywords(keyword)`,
+		`CREATE INDEX IF NOT EXISTS idx_added_at ON keywords(added_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_is_link ON keywords(is_link)`,
+		`CREATE INDEX IF NOT EXISTS idx_is_auto_added ON keywords(is_auto_added)`,
 		`CREATE TABLE IF NOT EXISTS whitelist
 			 (id INTEGER PRIMARY KEY, domain TEXT UNIQUE)`,
 		`CREATE INDEX IF NOT EXISTS idx_domain ON whitelist(domain)`,
@@ -82,8 +85,9 @@ func (d *Database) executeQuery(query string, args ...interface{}) ([]string, er
 	return results, nil
 }
 
-func (d *Database) AddKeyword(keyword string) error {
-	_, err := d.db.Exec("INSERT OR IGNORE INTO keywords (keyword) VALUES (?)", keyword)
+func (d *Database) AddKeyword(keyword string, isLink bool, isAutoAdded bool) error {
+	_, err := d.db.Exec("INSERT OR IGNORE INTO keywords (keyword, is_link, is_auto_added, added_at) VALUES (?, ?, ?, ?)",
+		keyword, isLink, isAutoAdded, time.Now())
 	if err != nil {
 		return err
 	}
@@ -104,6 +108,16 @@ func (d *Database) RemoveKeyword(keyword string) (bool, error) {
 	return rowsAffected > 0, nil
 }
 
+func (d *Database) CleanupExpiredLinks() error {
+	twoMonthsAgo := time.Now().AddDate(0, -2, 0)
+	_, err := d.db.Exec("DELETE FROM keywords WHERE is_link = TRUE AND is_auto_added = TRUE AND added_at < ?", twoMonthsAgo)
+	if err != nil {
+		return err
+	}
+	d.invalidateCache("keywords")
+	return nil
+}
+
 func (d *Database) GetAllKeywords() ([]string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -118,6 +132,13 @@ func (d *Database) GetAllKeywords() ([]string, error) {
 	}
 
 	return d.keywordsCache, nil
+}
+func (d *Database) GetAllManualKeywords() ([]string, error) {
+	return d.executeQuery("SELECT keyword FROM keywords WHERE is_auto_added = ?", false)
+}
+
+func (d *Database) GetAllAutoAddedLinks() ([]string, error) {
+	return d.executeQuery("SELECT keyword FROM keywords WHERE is_link = ? AND is_auto_added = ?", true, true)
 }
 
 func (d *Database) RemoveKeywordsContaining(substring string) ([]string, error) {
@@ -307,4 +328,117 @@ func (d *Database) invalidateCache(cacheType string) {
 
 func (d *Database) Close() error {
 	return d.db.Close()
+}
+
+// 迁移现有关键词
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+
+func (d *Database) MigrateExistingKeywords() error {
+	// 检查是否已经执行过迁移
+	var migrationDone bool
+	err := d.db.QueryRow("SELECT value FROM config WHERE key = 'keywords_migrated'").Scan(&migrationDone)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+
+	if migrationDone {
+		return nil // 迁移已经完成，无需再次执行
+	}
+
+	// 开始事务
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 获取所有现有的关键词
+	rows, err := tx.Query("SELECT keyword FROM keywords")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	// 准备插入语句
+	stmt, err := tx.Prepare("INSERT INTO keywords (keyword, is_link, is_auto_added) VALUES (?, ?, ?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	// 迁移现有关键词
+	for rows.Next() {
+		var keyword string
+		if err := rows.Scan(&keyword); err != nil {
+			return err
+		}
+
+		// 这里我们假设所有现有的关键词都是手动添加的非链接关键词
+		_, err = stmt.Exec(keyword, false, false)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 删除旧的关键词表
+	_, err = tx.Exec("DROP TABLE IF EXISTS old_keywords")
+	if err != nil {
+		return err
+	}
+
+	// 重命名现有的关键词表
+	_, err = tx.Exec("ALTER TABLE keywords RENAME TO old_keywords")
+	if err != nil {
+		return err
+	}
+
+	// 创建新的关键词表
+	_, err = tx.Exec(`CREATE TABLE keywords (
+			id INTEGER PRIMARY KEY,
+			keyword TEXT UNIQUE,
+			is_link BOOLEAN,
+			is_auto_added BOOLEAN,
+			added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	)`)
+	if err != nil {
+		return err
+	}
+
+	// 将数据从旧表复制到新表
+	_, err = tx.Exec("INSERT INTO keywords SELECT id, keyword, is_link, is_auto_added, added_at FROM old_keywords")
+	if err != nil {
+		return err
+	}
+
+	// 删除旧表
+	_, err = tx.Exec("DROP TABLE old_keywords")
+	if err != nil {
+		return err
+	}
+
+	// 更新配置，标记迁移已完成
+	_, err = tx.Exec("INSERT OR REPLACE INTO config (key, value) VALUES ('keywords_migrated', 'true')")
+	if err != nil {
+		return err
+	}
+
+	// 提交事务
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	return nil
 }

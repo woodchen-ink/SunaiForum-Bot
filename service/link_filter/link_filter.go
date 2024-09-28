@@ -124,7 +124,7 @@ func addNewKeyword(keyword string) error {
 		return fmt.Errorf("检查关键词时发生错误: %v", err)
 	}
 	if !exists {
-		err = core.DB.AddKeyword(keyword)
+		err = core.DB.AddKeyword(keyword, true, true) // isLink = true, isAutoAdded = true
 		if err != nil {
 			return fmt.Errorf("添加关键词时发生错误: %v", err)
 		}
@@ -132,6 +132,7 @@ func addNewKeyword(keyword string) error {
 	}
 	return nil
 }
+
 func containsKeyword(text string, linkFilter *LinkFilter) bool {
 	linkFilter.Mu.RLock()
 	defer linkFilter.Mu.RUnlock()
