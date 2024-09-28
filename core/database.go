@@ -44,12 +44,12 @@ func NewDatabase() (*Database, error) {
 func (d *Database) createTables() error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS keywords_new (
-					id INTEGER PRIMARY KEY,
-					keyword TEXT UNIQUE,
-					is_link BOOLEAN DEFAULT FALSE,
-					is_auto_added BOOLEAN DEFAULT FALSE,
-					added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-			)`,
+            id INTEGER PRIMARY KEY,
+            keyword TEXT UNIQUE,
+            is_link BOOLEAN DEFAULT FALSE,
+            is_auto_added BOOLEAN DEFAULT FALSE,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`,
 		`CREATE INDEX IF NOT EXISTS idx_keyword ON keywords_new(keyword)`,
 		`CREATE INDEX IF NOT EXISTS idx_added_at ON keywords_new(added_at)`,
 		`CREATE TABLE IF NOT EXISTS whitelist (
@@ -359,24 +359,24 @@ func (d *Database) Close() error {
 
 func (d *Database) MigrateExistingKeywords() error {
 	// 检查是否已经执行过迁移
-	var migrationDone bool
+	var migrationDone string
 	err := d.db.QueryRow("SELECT value FROM config WHERE key = 'keywords_migrated'").Scan(&migrationDone)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
 
-	if migrationDone {
+	if migrationDone == "true" {
 		return nil // 迁移已经完成，无需再次执行
 	}
 
 	// 检查旧表是否存在
-	var oldTableExists bool
-	err = d.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='keywords'").Scan(&oldTableExists)
+	var oldTableName string
+	err = d.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='keywords'").Scan(&oldTableName)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
 
-	if oldTableExists {
+	if oldTableName == "keywords" {
 		// 迁移数据
 		_, err = d.db.Exec(`INSERT OR IGNORE INTO keywords_new (keyword, is_link, is_auto_added, added_at)
 													SELECT keyword, 
