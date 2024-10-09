@@ -21,7 +21,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.22'  # 使用你项目需要的 Go 版本
+          go-version: '1.23'  # 使用你项目需要的 Go 版本
 
       - name: Build for amd64
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o main-amd64 .
