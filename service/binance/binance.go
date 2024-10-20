@@ -111,7 +111,7 @@ func sendPriceUpdate() {
 }
 
 func RunBinance() {
-	logger.Println("Starting Binance service...")
+	logger.Println("启动币安服务...")
 
 	// 初始化必要的变量
 	botToken = core.BOT_TOKEN
@@ -122,11 +122,12 @@ func RunBinance() {
 
 	// 初始化并加载所有交易对
 	if err := LoadAllSymbols(); err != nil {
-		logger.Fatalf("Failed to load all trading pairs: %v", err)
+		logger.Fatalf("加载所有交易对失败: %v", err)
 	}
 
 	// 启动每小时刷新交易对缓存
 	go StartSymbolRefresh(1 * time.Hour)
+	logger.Println("启动每小时刷新交易对缓存...")
 
 	// 立即发送一次价格更新
 	sendPriceUpdate()
@@ -137,7 +138,7 @@ func RunBinance() {
 	for range ticker.C {
 		now := time.Now().In(singaporeTZ)
 		if now.Minute() == 0 {
-			logger.Println("Sending hourly price update...")
+			logger.Println("发送每小时价格更新...")
 			sendPriceUpdate()
 		}
 	}

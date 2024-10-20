@@ -8,7 +8,10 @@ import (
 )
 
 func StartScheduledTasks() {
+	log.Printf("启动定时任务")
+
 	go periodicCleanup()
+	log.Printf("过期链接清理任务已启动")
 }
 
 func periodicCleanup() {
