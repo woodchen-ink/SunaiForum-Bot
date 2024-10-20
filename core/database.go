@@ -122,14 +122,20 @@ func (d *Database) RemoveKeyword(keyword string) (bool, error) {
 	return rowsAffected > 0, nil
 }
 
-func (d *Database) CleanupExpiredLinks() error {
+func (d *Database) CleanupExpiredLinks() (int64, error) {
 	twoMonthsAgo := time.Now().AddDate(0, -2, 0)
-	_, err := d.db.Exec("DELETE FROM keywords WHERE is_link = TRUE AND is_auto_added = TRUE AND added_at < ?", twoMonthsAgo)
+	result, err := d.db.Exec("DELETE FROM keywords WHERE is_link = TRUE AND is_auto_added = TRUE AND added_at < ?", twoMonthsAgo)
 	if err != nil {
-		return err
+		return 0, err
 	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
 	d.invalidateCache("keywords")
-	return nil
+	return rowsAffected, nil
 }
 
 func (d *Database) GetAllKeywords() ([]string, error) {

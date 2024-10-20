@@ -28,10 +28,10 @@ func periodicCleanup() {
 }
 
 func cleanupExpiredLinks() {
-	err := core.DB.CleanupExpiredLinks()
+	rowsAffected, err := core.DB.CleanupExpiredLinks()
 	if err != nil {
 		log.Printf("清理过期链接时发生错误: %v", err)
 	} else {
-		log.Println("已成功清理过期链接")
+		log.Printf("已成功清理 %d 条过期链接", rowsAffected)
 	}
 }
