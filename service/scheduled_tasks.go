@@ -18,15 +18,20 @@ func periodicCleanup() {
 	ticker := time.NewTicker(24 * time.Hour) // 每天执行一次清理
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			err := core.DB.CleanupExpiredLinks()
-			if err != nil {
-				log.Printf("清理过期链接时发生错误: %v", err)
-			} else {
-				log.Println("已成功清理过期链接")
-			}
-		}
+	// 立即执行一次清理
+	cleanupExpiredLinks()
+
+	// 使用 for range 替代 for { select {} }
+	for range ticker.C {
+		cleanupExpiredLinks()
+	}
+}
+
+func cleanupExpiredLinks() {
+	err := core.DB.CleanupExpiredLinks()
+	if err != nil {
+		log.Printf("清理过期链接时发生错误: %v", err)
+	} else {
+		log.Println("已成功清理过期链接")
 	}
 }

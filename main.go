@@ -19,11 +19,11 @@ func main() {
 
 	go binance.RunBinance()
 
+	// 启动定期任务
+	go service.StartScheduledTasks()
+
 	err = service.RunMessageHandler()
 	if err != nil {
 		log.Fatalf("Error in RunMessageHandler: %v", err)
 	}
-
-	// 启动定期任务
-	service.StartScheduledTasks()
 }
