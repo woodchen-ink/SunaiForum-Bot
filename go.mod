@@ -1,6 +1,6 @@
 module github.com/woodchen-ink/Q58Bot
 
-go 1.21.3
+go 1.23
 
 require (
 	github.com/adshao/go-binance/v2 v2.6.1
