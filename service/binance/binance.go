@@ -14,12 +14,11 @@ import (
 )
 
 var (
-	botToken    string
-	chatID      int64
-	symbols     []string
-	bot         *tgbotapi.BotAPI
-	lastMsgID   int
-	singaporeTZ *time.Location
+	botToken  string
+	chatID    int64
+	symbols   []string
+	bot       *tgbotapi.BotAPI
+	lastMsgID int
 )
 
 var logger = log.New(log.Writer(), "Binance: ", log.Ldate|log.Ltime|log.Lshortfile)
@@ -74,7 +73,7 @@ func formatChange(changePercent float64) string {
 }
 
 func sendPriceUpdate() {
-	now := time.Now().In(singaporeTZ)
+	now := time.Now()
 	message := fmt.Sprintf("市场更新 - %s (SGT)\n\n", now.Format("2006-01-02 15:04:05"))
 
 	for _, symbol := range symbols {
@@ -118,7 +117,6 @@ func RunBinance() {
 	bot = core.Bot
 	chatID = core.ChatID
 	symbols = core.Symbols
-	singaporeTZ = core.SingaporeTZ
 
 	// 初始化并加载所有交易对
 	if err := LoadAllSymbols(); err != nil {
@@ -136,7 +134,7 @@ func RunBinance() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		now := time.Now().In(singaporeTZ)
+		now := time.Now()
 		if now.Minute() == 0 {
 			logger.Println("发送每小时价格更新...")
 			sendPriceUpdate()
