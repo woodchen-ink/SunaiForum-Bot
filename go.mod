@@ -5,7 +5,7 @@ go 1.23
 require (
 	github.com/adshao/go-binance/v2 v2.6.1
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
-	modernc.org/sqlite v1.33.1
+	modernc.org/sqlite v1.34.1
 )
 
 require (
