@@ -9,11 +9,10 @@ import (
 	"sync"
 	"time"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/woodchen-ink/SunaiForum-Bot/core"
-)
+	"SunaiForum-Bot/core"
 
-var logger = log.New(log.Writer(), "LinkFilter: ", log.Ldate|log.Ltime|log.Lshortfile)
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
 
 type LinkFilter struct {
 	Keywords    []string
@@ -49,7 +48,7 @@ func (lf *LinkFilter) LoadDataFromDatabase() error {
 		return fmt.Errorf("failed to get whitelist: %v", err)
 	}
 
-	logger.Printf("Loaded %d Keywords and %d Whitelist entries from database", len(lf.Keywords), len(lf.Whitelist))
+	log.Printf("[LinkFilter] Loaded %d Keywords and %d Whitelist entries from database", len(lf.Keywords), len(lf.Whitelist))
 	return nil
 }
 
@@ -62,7 +61,7 @@ func (lf *LinkFilter) NormalizeLink(link string) string {
 	parsedURL, err := url.Parse("http://" + link)
 	if err != nil {
 		// 如果URL解析失败，记录错误信息，并返回原始链接
-		logger.Printf("Error parsing URL: %v", err)
+		log.Printf("[LinkFilter] Error parsing URL: %v", err)
 		return link
 	}
 	// 构建标准化的URL，包含主机名和转义后的路径
@@ -74,7 +73,7 @@ func (lf *LinkFilter) NormalizeLink(link string) string {
 	// 移除标准化URL末尾的斜杠（如果有）
 	result := strings.TrimSuffix(normalized, "/")
 	// 记录标准化后的链接信息
-	logger.Printf("Normalized link: %s -> %s", link, result)
+	log.Printf("[LinkFilter] Normalized link: %s -> %s", link, result)
 	return result
 }
 
@@ -83,7 +82,7 @@ func (lf *LinkFilter) ExtractDomain(urlStr string) string {
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
 		// 如果解析过程中出现错误，记录错误信息并返回原始URL字符串。
-		logger.Printf("Error parsing URL: %v", err)
+		log.Printf("[LinkFilter] Error parsing URL: %v", err)
 		return urlStr
 	}
 	// 返回解析得到的主机名，转换为小写。
@@ -110,11 +109,11 @@ func (lf *LinkFilter) IsWhitelisted(link string) bool {
 	domain := lf.ExtractDomain(link)
 	for _, whiteDomain := range lf.Whitelist {
 		if lf.domainMatch(domain, whiteDomain) {
-			logger.Printf("Whitelist check for %s: Passed (matched %s)", link, whiteDomain)
+			log.Printf("[LinkFilter] Whitelist check for %s: Passed (matched %s)", link, whiteDomain)
 			return true
 		}
 	}
-	logger.Printf("Whitelist check for %s: Failed", link)
+	log.Printf("[LinkFilter] Whitelist check for %s: Failed", link)
 	return false
 }
 
@@ -128,7 +127,7 @@ func addNewKeyword(keyword string) error {
 		if err != nil {
 			return fmt.Errorf("添加关键词时发生错误: %v", err)
 		}
-		logger.Printf("新关键词已添加: %s", keyword)
+		log.Printf("[LinkFilter] 新关键词已添加: %s", keyword)
 	}
 	return nil
 }
@@ -139,7 +138,7 @@ func containsKeyword(text string, linkFilter *LinkFilter) bool {
 
 	for _, keyword := range linkFilter.Keywords {
 		if strings.Contains(strings.ToLower(text), strings.ToLower(keyword)) {
-			logger.Printf("文字包含关键字: %s", keyword)
+			log.Printf("[LinkFilter] 文字包含关键字: %s", keyword)
 			return true
 		}
 	}
@@ -151,11 +150,15 @@ func extractLinks(text string, linkFilter *LinkFilter) []string {
 	defer linkFilter.Mu.RUnlock()
 
 	links := linkFilter.LinkPattern.FindAllString(text, -1)
-	logger.Printf("找到链接: %v", links)
+	log.Printf("[LinkFilter] 找到链接: %v", links)
 	return links
 }
 func ShouldFilter(text string, linkFilter *LinkFilter) (bool, []string) {
-	logger.Printf("Checking text: %s", text)
+	log.Printf("[LinkFilter] Checking text: %s", text)
+	if len(text) > 200 {
+		text = text[:200]
+	}
+	log.Printf("[LinkFilter] 检查文本: %s", text)
 
 	if containsKeyword(text, linkFilter) {
 		return true, nil
@@ -170,12 +173,12 @@ func processLinks(links []string, linkFilter *LinkFilter) (bool, []string) {
 	for _, link := range links {
 		normalizedLink := linkFilter.NormalizeLink(link)
 		if !linkFilter.IsWhitelisted(normalizedLink) {
-			logger.Printf("链接未列入白名单: %s", normalizedLink)
+			log.Printf("[LinkFilter] 链接未列入白名单: %s", normalizedLink)
 			if !containsKeyword(normalizedLink, linkFilter) {
 				newNonWhitelistedLinks = append(newNonWhitelistedLinks, normalizedLink)
 				err := addNewKeyword(normalizedLink)
 				if err != nil {
-					logger.Printf("添加关键词时发生错误: %v", err)
+					log.Printf("[LinkFilter] 添加关键词时发生错误: %v", err)
 				}
 				// 如果成功添加了新关键词，更新 linkFilter 的 Keywords
 				linkFilter.Mu.Lock()
@@ -195,18 +198,19 @@ func (lf *LinkFilter) CheckAndFilterLink(bot *tgbotapi.BotAPI, message *tgbotapi
 
 	// 如果发现新的非白名单链接，记录日志
 	if len(newLinks) > 0 {
-		logger.Printf("发现新的非白名单链接: %v", newLinks)
+		log.Printf("[LinkFilter] 发现新的非白名单链接: %v", newLinks)
 	}
 
 	if shouldFilter {
 		// 记录被过滤的消息
-		logger.Printf("消息应该被过滤: %s", message.Text)
+		log.Printf("[LinkFilter] 消息应该被过滤: %s", message.Text)
 		// 删除原始消息
 		deleteMsg := tgbotapi.NewDeleteMessage(message.Chat.ID, message.MessageID)
 		_, err := bot.Request(deleteMsg)
 		if err != nil {
 			// 删除消息失败时记录错误
-			logger.Printf("删除消息失败: %v", err)
+			log.Printf("[LinkFilter] 删除消息失败: %v", err)
+			return true
 		}
 
 		// 发送提示消息
@@ -214,7 +218,7 @@ func (lf *LinkFilter) CheckAndFilterLink(bot *tgbotapi.BotAPI, message *tgbotapi
 		sent, err := bot.Send(notification)
 		if err != nil {
 			// 发送通知失败时记录错误
-			logger.Printf("发送通知失败: %v", err)
+			log.Printf("[LinkFilter] 发送通知失败: %v", err)
 		} else {
 			// 3分钟后删除提示消息
 			core.DeleteMessageAfterDelay(bot, message.Chat.ID, sent.MessageID, 3*time.Minute)

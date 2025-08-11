@@ -6,16 +6,13 @@ import (
 	"log"
 	"time"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/woodchen-ink/SunaiForum-Bot/core"
-	"github.com/woodchen-ink/SunaiForum-Bot/service/binance"
-	"github.com/woodchen-ink/SunaiForum-Bot/service/group_member_management"
-	"github.com/woodchen-ink/SunaiForum-Bot/service/link_filter"
-	"github.com/woodchen-ink/SunaiForum-Bot/service/prompt_reply"
-)
+	"SunaiForum-Bot/core"
+	"SunaiForum-Bot/service/binance"
+	"SunaiForum-Bot/service/group_member_management"
+	"SunaiForum-Bot/service/link_filter"
+	"SunaiForum-Bot/service/prompt_reply"
 
-var (
-	logger = log.New(log.Writer(), "MessageHandler: ", log.Ldate|log.Ltime|log.Lshortfile)
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // handleUpdate 处理所有传入的更新信息，包括消息和命令, 然后分开处理。
@@ -57,8 +54,7 @@ func handleAdminCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 // processMessage 处理群里接收到的消息。
 func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter *link_filter.LinkFilter) {
 	// 记录消息内容
-	// log.Printf("Processing message: %s", message.Text)
-	logger.Printf("Processing message: %s", message.Text)
+	log.Printf("[MessageHandler] Processing message: %s", message.Text)
 
 	// 处理 /ban 命令
 	if message.ReplyToMessage != nil && message.Text == "/ban" {
@@ -82,12 +78,12 @@ func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, linkFilter 
 }
 
 func RunMessageHandler() error {
-	logger.Println("消息处理器启动...")
+	log.Println("[MessageHandler] 消息处理器启动...")
 
 	// 加载提示回复数据
 	err := prompt_reply.Manager.LoadDataFromDatabase()
 	if err != nil {
-		logger.Printf("加载提示回复数据失败: %v", err)
+		log.Printf("[MessageHandler] 加载提示回复数据失败: %v", err)
 		// 考虑是否要因为这个错误停止启动
 		// return fmt.Errorf("加载提示回复数据失败: %w", err)
 	}
@@ -98,16 +94,16 @@ func RunMessageHandler() error {
 
 	for {
 		err := func() error {
-			logger.Printf("Attempting to create bot with token: %s", core.BOT_TOKEN)
+			log.Printf("[MessageHandler] Attempting to create bot")
 			bot, err := tgbotapi.NewBotAPI(core.BOT_TOKEN)
 			if err != nil {
-				log.Printf("Error details: %+v", err)
+				log.Printf("[MessageHandler] Error details: %+v", err)
 				return fmt.Errorf("failed to create bot: %w", err)
 			}
 
 			bot.Debug = core.DEBUG_MODE
 
-			logger.Printf("Authorized on account %s", bot.Self.UserName)
+			log.Printf("[MessageHandler] Authorized on account %s", bot.Self.UserName)
 
 			err = core.RegisterCommands(bot)
 			if err != nil {
@@ -145,7 +141,7 @@ func RunMessageHandler() error {
 			}
 		} else {
 			delay = baseDelay
-			logger.Println("Bot disconnected. Attempting to restart immediately...")
+			log.Println("[MessageHandler] Bot disconnected. Attempting to restart immediately...")
 		}
 	}
 }

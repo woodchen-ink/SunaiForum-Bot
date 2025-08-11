@@ -3,9 +3,9 @@ package main
 import (
 	"log"
 
-	"github.com/woodchen-ink/SunaiForum-Bot/core"
-	"github.com/woodchen-ink/SunaiForum-Bot/service"
-	"github.com/woodchen-ink/SunaiForum-Bot/service/binance"
+	"SunaiForum-Bot/core"
+	"SunaiForum-Bot/service"
+	"SunaiForum-Bot/service/binance"
 )
 
 func main() {

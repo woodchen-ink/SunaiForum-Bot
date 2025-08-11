@@ -7,12 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/woodchen-ink/SunaiForum-Bot/core"
+	"SunaiForum-Bot/core"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
-
-var logger = log.New(log.Writer(), "PromptReply: ", log.Ldate|log.Ltime|log.Lshortfile)
 
 type PromptReplyManager struct {
 	promptReplies map[string]string
@@ -38,13 +36,21 @@ func (prm *PromptReplyManager) LoadDataFromDatabase() error {
 
 	prm.promptReplies = promptReplies
 
-	logger.Printf("提示回复: 已从数据库加载 %d 条提示回复", len(prm.promptReplies))
+	log.Printf("[PromptReply] 已从数据库加载 %d 条提示回复", len(prm.promptReplies))
 	return nil
 }
 func SetPromptReply(prompt, reply string) error {
+	// 输入验证
+	if err := core.ValidatePrompt(prompt, reply); err != nil {
+		return fmt.Errorf("输入验证失败: %v", err)
+	}
+
+	prompt = strings.TrimSpace(prompt)
+	reply = strings.TrimSpace(reply)
+
 	err := core.DB.AddPromptReply(prompt, reply)
 	if err != nil {
-		logger.Printf("提示回复: %s 设置提示回复失败: %v", time.Now().Format("2006/01/02 15:04:05"), err)
+		log.Printf("[PromptReply] %s 设置提示回复失败: %v", time.Now().Format("2006/01/02 15:04:05"), err)
 		return err
 	}
 
@@ -52,14 +58,24 @@ func SetPromptReply(prompt, reply string) error {
 	Manager.promptReplies[prompt] = reply
 	Manager.mu.Unlock()
 
-	logger.Printf("提示回复: %s 设置提示回复成功。当前提示回复数量: %d", time.Now().Format("2006/01/02 15:04:05"), len(Manager.promptReplies))
+	log.Printf("[PromptReply] %s 设置提示回复成功。当前提示回复数量: %d", time.Now().Format("2006/01/02 15:04:05"), len(Manager.promptReplies))
 	return nil
 }
 
 func DeletePromptReply(prompt string) error {
+	// 基本输入验证
+	if prompt == "" {
+		return fmt.Errorf("提示词不能为空")
+	}
+
+	prompt = strings.TrimSpace(prompt)
+	if len(prompt) == 0 {
+		return fmt.Errorf("提示词不能为空白字符")
+	}
+
 	err := core.DB.DeletePromptReply(prompt)
 	if err != nil {
-		logger.Printf("提示回复: %s 删除提示回复失败: %v", time.Now().Format("2006/01/02 15:04:05"), err)
+		log.Printf("[PromptReply] %s 删除提示回复失败: %v", time.Now().Format("2006/01/02 15:04:05"), err)
 		return err
 	}
 
@@ -67,14 +83,14 @@ func DeletePromptReply(prompt string) error {
 	delete(Manager.promptReplies, prompt)
 	Manager.mu.Unlock()
 
-	logger.Printf("提示回复: %s 删除提示回复成功。当前提示回复数量: %d", time.Now().Format("2006/01/02 15:04:05"), len(Manager.promptReplies))
+	log.Printf("[PromptReply] %s 删除提示回复成功。当前提示回复数量: %d", time.Now().Format("2006/01/02 15:04:05"), len(Manager.promptReplies))
 	return nil
 }
 
 func GetPromptReply(message string) (string, bool) {
 	promptReplies, err := core.DB.GetAllPromptReplies()
 	if err != nil {
-		logger.Printf("Error getting prompt replies: %v", err)
+		log.Printf("[PromptReply] Error getting prompt replies: %v", err)
 		return "", false
 	}
 
@@ -90,7 +106,7 @@ func GetPromptReply(message string) (string, bool) {
 func ListPromptReplies() string {
 	replies, err := core.DB.GetAllPromptReplies()
 	if err != nil {
-		logger.Printf("获取及时回复时出错: %v", err)
+		log.Printf("[PromptReply] 获取及时回复时出错: %v", err)
 		return "检索提示回复时出错"
 	}
 

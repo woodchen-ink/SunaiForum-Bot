@@ -6,22 +6,75 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"sync"
 	"time"
+
+	"SunaiForum-Bot/core"
 
 	"github.com/adshao/go-binance/v2"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/woodchen-ink/SunaiForum-Bot/core"
 )
 
 var (
-	botToken  string
-	chatID    int64
-	symbols   []string
-	bot       *tgbotapi.BotAPI
-	lastMsgID int
+	botToken    string
+	chatID      int64
+	symbols     []string
+	bot         *tgbotapi.BotAPI
+	lastMsgID   int
+	lastMsgMu   sync.Mutex // 保护lastMsgID的并发访问
 )
 
-var logger = log.New(log.Writer(), "Binance: ", log.Ldate|log.Ltime|log.Lshortfile)
+const lastMsgIDConfigKey = "binance_last_msg_id"
+
+// 从数据库加载lastMsgID
+func loadLastMsgID() {
+	lastMsgMu.Lock()
+	defer lastMsgMu.Unlock()
+	
+	value, err := core.DB.GetConfig(lastMsgIDConfigKey)
+	if err != nil {
+		log.Printf("[Binance] 加载lastMsgID失败: %v", err)
+		lastMsgID = 0
+		return
+	}
+	
+	if value == "" {
+		lastMsgID = 0
+		log.Printf("[Binance] 未找到保存的lastMsgID，设置为0")
+		return
+	}
+	
+	msgID, err := strconv.Atoi(value)
+	if err != nil {
+		log.Printf("[Binance] 解析lastMsgID失败: %v", err)
+		lastMsgID = 0
+		return
+	}
+	
+	lastMsgID = msgID
+	log.Printf("[Binance] 从数据库加载lastMsgID: %d", lastMsgID)
+}
+
+// 保存lastMsgID到数据库
+func saveLastMsgID(msgID int) {
+	lastMsgMu.Lock()
+	defer lastMsgMu.Unlock()
+	
+	lastMsgID = msgID
+	err := core.DB.SetConfig(lastMsgIDConfigKey, strconv.Itoa(msgID))
+	if err != nil {
+		log.Printf("[Binance] 保存lastMsgID失败: %v", err)
+	} else {
+		log.Printf("[Binance] 保存lastMsgID到数据库: %d", msgID)
+	}
+}
+
+// 获取当前的lastMsgID（线程安全）
+func getLastMsgID() int {
+	lastMsgMu.Lock()
+	defer lastMsgMu.Unlock()
+	return lastMsgID
+}
 
 type tickerInfo struct {
 	symbol        string
@@ -79,7 +132,7 @@ func sendPriceUpdate() {
 	for _, symbol := range symbols {
 		info, err := getTickerInfo(symbol)
 		if err != nil {
-			logger.Printf("Error getting ticker info for %s: %v", symbol, err)
+			log.Printf("[Binance] 获取交易对 %s 的价格信息时出错: %v", symbol, err)
 			continue
 		}
 
@@ -90,27 +143,33 @@ func sendPriceUpdate() {
 		message += fmt.Sprintf("24h 涨跌: %s\n\n", changeStr)
 	}
 
-	if lastMsgID != 0 {
-		deleteMsg := tgbotapi.NewDeleteMessage(chatID, lastMsgID)
+	// 删除之前的消息（如果存在）
+	currentLastMsgID := getLastMsgID()
+	if currentLastMsgID != 0 {
+		deleteMsg := tgbotapi.NewDeleteMessage(chatID, currentLastMsgID)
 		_, err := bot.Request(deleteMsg)
 		if err != nil {
-			logger.Printf("Failed to delete previous message: %v", err)
+			log.Printf("[Binance] 删除前一条消息 %d 时出错: %v", currentLastMsgID, err)
+		} else {
+			log.Printf("[Binance] 成功删除前一条消息: %d", currentLastMsgID)
 		}
 	}
 
+	// 发送新消息
 	msg := tgbotapi.NewMessage(chatID, message)
 	msg.ParseMode = "Markdown"
 	sentMsg, err := bot.Send(msg)
 	if err != nil {
-		logger.Printf("Failed to send message. Error: %v\nFull message content:\nChat ID: %d\nMessage: %s", err, chatID, message)
+		log.Printf("[Binance] 发送消息时出错: %v\nFull message content:\nChat ID: %d\nMessage: %s", err, chatID, message)
 		return
 	}
 
-	lastMsgID = sentMsg.MessageID
+	// 保存新消息ID到数据库
+	saveLastMsgID(sentMsg.MessageID)
 }
 
 func RunBinance() {
-	logger.Println("启动币安服务...")
+	log.Println("[Binance]", "启动币安服务...")
 
 	// 初始化必要的变量
 	botToken = core.BOT_TOKEN
@@ -118,16 +177,19 @@ func RunBinance() {
 	chatID = core.ChatID
 	symbols = core.Symbols
 
+	// 从数据库加载lastMsgID（容器重启时恢复）
+	loadLastMsgID()
+
 	// 初始化并加载所有交易对
 	if err := LoadAllSymbols(); err != nil {
-		logger.Fatalf("加载所有交易对失败: %v", err)
+		log.Fatalf("[Binance] 加载所有交易对失败: %v", err)
 	}
 
 	// 启动每小时刷新交易对缓存
 	go StartSymbolRefresh(1 * time.Hour)
-	logger.Println("启动每小时刷新交易对缓存...")
+	log.Println("[Binance]", "启动每小时刷新交易对缓存...")
 
-	// 立即发送一次价格更新
+	// 立即发送一次价格更新（会删除之前的消息如果存在）
 	sendPriceUpdate()
 
 	ticker := time.NewTicker(1 * time.Minute)
@@ -136,7 +198,7 @@ func RunBinance() {
 	for range ticker.C {
 		now := time.Now()
 		if now.Minute() == 0 {
-			logger.Println("发送每小时价格更新...")
+			log.Println("[Binance]", "发送每小时价格更新...")
 			sendPriceUpdate()
 		}
 	}

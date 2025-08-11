@@ -3,6 +3,7 @@ package binance
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -34,7 +35,7 @@ func LoadAllSymbols() error {
 		}
 	}
 
-	logger.Printf("Loaded %d valid USDT trading pairs", len(allSymbols))
+	log.Printf("[Binance] Loaded %d valid USDT trading pairs", len(allSymbols))
 	return nil
 }
 
@@ -48,9 +49,9 @@ func StartSymbolRefresh(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	go func() {
 		for range ticker.C {
-			logger.Println("Refreshing trading pairs...")
+			log.Println("[Binance] Refreshing trading pairs...")
 			if err := LoadAllSymbols(); err != nil {
-				logger.Printf("Failed to refresh symbols: %v", err)
+				log.Printf("[Binance] Failed to refresh symbols: %v", err)
 			}
 		}
 	}()
@@ -65,7 +66,7 @@ func HandleSymbolQuery(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		if strings.EqualFold(msg, coinName) {
 			info, err := getTickerInfo(symbol)
 			if err != nil {
-				logger.Printf("Error getting ticker info for %s: %v", symbol, err)
+				log.Printf("[Binance] Error getting ticker info for %s: %v", symbol, err)
 				return
 			}
 			replyMessage := fmt.Sprintf("*%s*\n价格: $%.7f\n24h 涨跌: %s\n",

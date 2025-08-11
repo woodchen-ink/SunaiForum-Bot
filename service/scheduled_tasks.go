@@ -4,7 +4,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/woodchen-ink/SunaiForum-Bot/core"
+	"SunaiForum-Bot/core"
 )
 
 func StartScheduledTasks() {

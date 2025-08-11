@@ -5,11 +5,10 @@ import (
 	"log"
 	"time"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/woodchen-ink/SunaiForum-Bot/core"
-)
+	"SunaiForum-Bot/core"
 
-var logger = log.New(log.Writer(), "GroupMemberManagement: ", log.Ldate|log.Ltime|log.Lshortfile)
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
 
 func HandleBanCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	// 检查是否是管理员
@@ -29,7 +28,7 @@ func HandleBanCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	deleteConfig := tgbotapi.NewDeleteMessage(chatID, message.ReplyToMessage.MessageID)
 	_, err := bot.Request(deleteConfig)
 	if err != nil {
-		logger.Printf("删除原消息时出错: %v", err)
+		log.Printf("[GroupMemberManagement] 删除原消息时出错: %v", err)
 	}
 
 	// 踢出用户
@@ -43,7 +42,7 @@ func HandleBanCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 
 	_, err = bot.Request(kickChatMemberConfig)
 	if err != nil {
-		logger.Printf("禁止用户时出错: %v", err)
+		log.Printf("[GroupMemberManagement] 禁止用户时出错: %v", err)
 		return
 	}
 
@@ -52,7 +51,7 @@ func HandleBanCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	msg := tgbotapi.NewMessage(chatID, banMessage)
 	sentMsg, err := bot.Send(msg)
 	if err != nil {
-		logger.Printf("发送禁止消息时出错: %v", err)
+		log.Printf("[GroupMemberManagement] 发送禁止消息时出错: %v", err)
 		return
 	}
 
@@ -66,7 +65,7 @@ func deleteMessagesAfterDelay(bot *tgbotapi.BotAPI, chatID int64, messageIDs []i
 		deleteConfig := tgbotapi.NewDeleteMessage(chatID, msgID)
 		_, err := bot.Request(deleteConfig)
 		if err != nil {
-			logger.Printf("删除消息 %d 时出错: %v", msgID, err)
+			log.Printf("[GroupMemberManagement] 删除消息 %d 时出错: %v", msgID, err)
 		}
 	}
 }

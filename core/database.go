@@ -372,10 +372,52 @@ func (d *Database) EnsureTablesExist() error {
 }
 
 func (d *Database) CountRecords(tableName string) (int, error) {
+	// 验证表名白名单，防止SQL注入
+	allowedTables := map[string]bool{
+		"keywords":      true,
+		"whitelist":     true,
+		"prompt_replies": true,
+		"config":        true,
+	}
+	
+	if !allowedTables[tableName] {
+		return 0, fmt.Errorf("invalid table name: %s", tableName)
+	}
+	
 	var count int
-	err := d.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&count)
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
+	err := d.db.QueryRow(query).Scan(&count)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to count records in table %s: %v", tableName, err)
 	}
 	return count, nil
+}
+
+// 配置相关函数
+func (d *Database) SetConfig(key, value string) error {
+	_, err := d.db.Exec("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", key, value)
+	if err != nil {
+		return fmt.Errorf("failed to set config %s: %v", key, err)
+	}
+	return nil
+}
+
+func (d *Database) GetConfig(key string) (string, error) {
+	var value string
+	err := d.db.QueryRow("SELECT value FROM config WHERE key = ?", key).Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil // 配置不存在返回空字符串
+		}
+		return "", fmt.Errorf("failed to get config %s: %v", key, err)
+	}
+	return value, nil
+}
+
+func (d *Database) DeleteConfig(key string) error {
+	_, err := d.db.Exec("DELETE FROM config WHERE key = ?", key)
+	if err != nil {
+		return fmt.Errorf("failed to delete config %s: %v", key, err)
+	}
+	return nil
 }
