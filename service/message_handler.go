@@ -7,11 +7,11 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/woodchen-ink/Q58Bot/core"
-	"github.com/woodchen-ink/Q58Bot/service/binance"
-	"github.com/woodchen-ink/Q58Bot/service/group_member_management"
-	"github.com/woodchen-ink/Q58Bot/service/link_filter"
-	"github.com/woodchen-ink/Q58Bot/service/prompt_reply"
+	"github.com/woodchen-ink/SunaiForum-Bot/core"
+	"github.com/woodchen-ink/SunaiForum-Bot/service/binance"
+	"github.com/woodchen-ink/SunaiForum-Bot/service/group_member_management"
+	"github.com/woodchen-ink/SunaiForum-Bot/service/link_filter"
+	"github.com/woodchen-ink/SunaiForum-Bot/service/prompt_reply"
 )
 
 var (

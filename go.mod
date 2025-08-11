@@ -1,4 +1,4 @@
-module github.com/woodchen-ink/Q58Bot
+module github.com/woodchen-ink/SunaiForum-Bot
 
 go 1.23
 

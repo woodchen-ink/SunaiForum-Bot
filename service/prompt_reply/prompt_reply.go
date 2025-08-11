@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/woodchen-ink/Q58Bot/core"
+	"github.com/woodchen-ink/SunaiForum-Bot/core"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )

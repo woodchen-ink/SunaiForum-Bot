@@ -10,7 +10,7 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/woodchen-ink/Q58Bot/core"
+	"github.com/woodchen-ink/SunaiForum-Bot/core"
 )
 
 var logger = log.New(log.Writer(), "LinkFilter: ", log.Ldate|log.Ltime|log.Lshortfile)

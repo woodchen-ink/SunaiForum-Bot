@@ -8,7 +8,7 @@ on:
       - v*
 
 env:
-  IMAGE_NAME: q58bot
+  IMAGE_NAME: sunaiforum-bot
 
 jobs:
   build:

@@ -1,4 +1,6 @@
-# Q58-Telegram-Bot
+# SunaiForum-Telegram-Bot
+一个为 SunaiForum 设计的 Telegram 机器人, 用于管理群组, 监控群组活动, 提供群组内的一些功能.
+
 
 ## 示例
 
@@ -64,7 +66,7 @@ docker-compose up -d
 
 ## 项目结构
 ```
-Q58Bot/
+SunaiForum-Bot/
 │
 ├── core/
 │   ├── bot_commands.go # 注册机器人命令
@@ -104,7 +106,8 @@ Q58Bot/
    - `init.go`里
       ``` go
       // 初始化数据库
-      DB_FILE = filepath.Join("/app/data", "q58.db")
+      DB_FILE = filepath.Join("/app/data", "sunai.db")
+
       var err error
       DB, err = NewDatabase()
       if err != nil {

@@ -39,7 +39,7 @@ func Init() error {
 	}
 
 	// 初始化数据库
-	DB_FILE = filepath.Join("/app/data", "q58.db")
+	DB_FILE = filepath.Join("/app/data", "sunai.db")
 	DB, err = NewDatabase()
 	if err != nil {
 		return fmt.Errorf("初始化数据库失败: %v", err)
