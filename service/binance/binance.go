@@ -126,10 +126,21 @@ func formatChange(changePercent float64) string {
 }
 
 func sendPriceUpdate() {
+	// 如果没有配置交易对，跳过推送
+	if len(symbols) == 0 {
+		log.Println("[Binance] 未配置交易对，跳过价格推送")
+		return
+	}
+
 	now := time.Now()
 	message := fmt.Sprintf("市场更新 - %s (SGT)\n\n", now.Format("2006-01-02 15:04:05"))
 
 	for _, symbol := range symbols {
+		// 跳过空的交易对
+		if symbol == "" {
+			continue
+		}
+
 		info, err := getTickerInfo(symbol)
 		if err != nil {
 			log.Printf("[Binance] 获取交易对 %s 的价格信息时出错: %v", symbol, err)
@@ -188,6 +199,13 @@ func RunBinance() {
 	// 启动每小时刷新交易对缓存
 	go StartSymbolRefresh(1 * time.Hour)
 	log.Println("[Binance]", "启动每小时刷新交易对缓存...")
+
+	// 检查是否配置了交易对
+	if len(symbols) == 0 || (len(symbols) == 1 && symbols[0] == "") {
+		log.Println("[Binance]", "未配置交易对（SYMBOLS环境变量为空），仅启用查询功能，不主动推送价格")
+		// 不启动定时推送，但保持服务运行以支持查询功能
+		select {} // 阻塞主goroutine，保持服务运行
+	}
 
 	// 立即发送一次价格更新（会删除之前的消息如果存在）
 	sendPriceUpdate()
