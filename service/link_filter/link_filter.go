@@ -38,7 +38,7 @@ func (lf *LinkFilter) LoadDataFromDatabase() error {
 	defer lf.Mu.Unlock()
 
 	var err error
-	lf.Keywords, err = core.DB.GetAllKeywords()
+	lf.Keywords, err = core.DB.GetAllManualKeywords()
 	if err != nil {
 		return fmt.Errorf("failed to get keywords: %v", err)
 	}
@@ -48,7 +48,7 @@ func (lf *LinkFilter) LoadDataFromDatabase() error {
 		return fmt.Errorf("failed to get whitelist: %v", err)
 	}
 
-	log.Printf("[LinkFilter] Loaded %d Keywords and %d Whitelist entries from database", len(lf.Keywords), len(lf.Whitelist))
+	log.Printf("[LinkFilter] Loaded %d manual keywords and %d Whitelist entries from database", len(lf.Keywords), len(lf.Whitelist))
 	return nil
 }
 
@@ -117,21 +117,6 @@ func (lf *LinkFilter) IsWhitelisted(link string) bool {
 	return false
 }
 
-func addNewKeyword(keyword string) error {
-	exists, err := core.DB.KeywordExists(keyword)
-	if err != nil {
-		return fmt.Errorf("检查关键词时发生错误: %v", err)
-	}
-	if !exists {
-		err = core.DB.AddKeyword(keyword, true, true) // isLink = true, isAutoAdded = true
-		if err != nil {
-			return fmt.Errorf("添加关键词时发生错误: %v", err)
-		}
-		log.Printf("[LinkFilter] 新关键词已添加: %s", keyword)
-	}
-	return nil
-}
-
 func containsKeyword(text string, linkFilter *LinkFilter) bool {
 	linkFilter.Mu.RLock()
 	defer linkFilter.Mu.RUnlock()
@@ -164,33 +149,7 @@ func ShouldFilter(text string, linkFilter *LinkFilter) (bool, []string) {
 		return true, nil
 	}
 
-	links := extractLinks(text, linkFilter)
-	return processLinks(links, linkFilter)
-}
-func processLinks(links []string, linkFilter *LinkFilter) (bool, []string) {
-	var newNonWhitelistedLinks []string
-
-	for _, link := range links {
-		normalizedLink := linkFilter.NormalizeLink(link)
-		if !linkFilter.IsWhitelisted(normalizedLink) {
-			log.Printf("[LinkFilter] 链接未列入白名单: %s", normalizedLink)
-			if !containsKeyword(normalizedLink, linkFilter) {
-				newNonWhitelistedLinks = append(newNonWhitelistedLinks, normalizedLink)
-				err := addNewKeyword(normalizedLink)
-				if err != nil {
-					log.Printf("[LinkFilter] 添加关键词时发生错误: %v", err)
-				}
-				// 如果成功添加了新关键词，更新 linkFilter 的 Keywords
-				linkFilter.Mu.Lock()
-				linkFilter.Keywords = append(linkFilter.Keywords, normalizedLink)
-				linkFilter.Mu.Unlock()
-			} else {
-				return true, nil
-			}
-		}
-	}
-
-	return false, newNonWhitelistedLinks
+	return false, nil
 }
 func (lf *LinkFilter) CheckAndFilterLink(bot *tgbotapi.BotAPI, message *tgbotapi.Message) bool {
 	// 判断消息是否应当被过滤及找出新的非白名单链接
@@ -214,7 +173,7 @@ func (lf *LinkFilter) CheckAndFilterLink(bot *tgbotapi.BotAPI, message *tgbotapi
 		}
 
 		// 发送提示消息
-		notification := tgbotapi.NewMessage(message.Chat.ID, "已撤回该消息。注:一个链接不能发两次.")
+		notification := tgbotapi.NewMessage(message.Chat.ID, "已撤回该消息。")
 		sent, err := bot.Send(notification)
 		if err != nil {
 			// 发送通知失败时记录错误

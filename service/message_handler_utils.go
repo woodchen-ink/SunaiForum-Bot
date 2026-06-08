@@ -36,34 +36,14 @@ func handleListKeywords(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		return
 	}
 
-	autoAddedLinks, err := core.DB.GetAllAutoAddedLinks()
-	if err != nil {
-		core.SendErrorMessage(bot, message.Chat.ID, "获取自动添加的链接列表时发生错误。")
-		log.Printf("[MessageHandler] Failed to get auto-added links: %v", err)
-		return
-	}
-
-	if len(manualKeywords) == 0 && len(autoAddedLinks) == 0 {
-		core.SendMessage(bot, message.Chat.ID, "关键词和链接列表为空。")
+	if len(manualKeywords) == 0 {
+		core.SendMessage(bot, message.Chat.ID, "关键词列表为空。")
 	} else {
-		// 对关键词和链接进行排序
 		sort.Strings(manualKeywords)
-		sort.Strings(autoAddedLinks)
 
-		// 发送手动添加的关键词列表
-		if len(manualKeywords) > 0 {
-			err := core.SendLongMessage(bot, message.Chat.ID, "手动添加的关键词列表（按字母顺序排序）：", manualKeywords)
-			if err != nil {
-				core.SendErrorMessage(bot, message.Chat.ID, "发送手动添加的关键词列表时发生错误。")
-			}
-		}
-
-		// 发送自动添加的链接列表
-		if len(autoAddedLinks) > 0 {
-			err := core.SendLongMessage(bot, message.Chat.ID, "自动添加的链接列表（按字母顺序排序）：", autoAddedLinks)
-			if err != nil {
-				core.SendErrorMessage(bot, message.Chat.ID, "发送自动添加的链接列表时发生错误。")
-			}
+		err := core.SendLongMessage(bot, message.Chat.ID, "关键词列表（按字母顺序排序）：", manualKeywords)
+		if err != nil {
+			core.SendErrorMessage(bot, message.Chat.ID, "发送关键词列表时发生错误。")
 		}
 	}
 }

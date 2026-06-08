@@ -28,11 +28,9 @@
   - 例如，如果用户发送 "BTC"、"btc" 或 "Btc"，都会触发比特币的价格信息发送，但发送 "What's the price of BTC?" 则不会触发。
 
 ### 链接拦截
-- 新增: 当非管理员时, 才会进行链接拦截
-- 非白名单域名链接, 在发送第二次会被拦截撤回
+- 当非管理员发送包含手动添加关键词的消息时, 会被拦截撤回
 
 ### 白名单域名
-- 当用户发送链接, 属于白名单域名, 则不进行操作. 如果不属于白名单域名, 则会第一次允许发送, 第二次进行撤回操作.
 - 会匹配链接中的域名, 包括二级域名和三级域名
 - 例如，如果白名单中有 "example.com"，它将匹配 "example.com"、"sub.example.com" 和 "sub.sub.example.com"。
 - 同时，如果白名单中有 "sub.example.com"，它将匹配 "sub.example.com" 和 "subsub.sub.example.com"，但不会匹配 "example.com" 或 "othersub.example.com"。
