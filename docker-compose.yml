@@ -1,13 +1,29 @@
 services:
   sunaiforum-bot:
     container_name: sunaiforum-bot
-    image: woodchen/sunaiforum-bot:latest
+    image: ghcr.io/woodchen-ink/sunaiforum-bot:latest
     restart: always
     environment:
-      - BOT_TOKEN=719XXX42:AAEydXXXX8rg #换成自己的机器人ID
-      - ADMIN_ID=5912366993 #换成自己的ID
-      - CHAT_ID=-100xxx781  #换成自己的群ID
-      - SYMBOLS=DOGS/USDT,TON/USDT
+      # ---- 必填 ----
+      - BOT_TOKEN=719XXX42:AAEydXXXX8rg  # 换成自己的机器人 Token
+      - ADMIN_ID=5912366993              # 换成自己的 Telegram 用户 ID
+      - CHAT_ID=-100xxx781               # 换成自己的群 ID
+
+      # ---- 可选: 行情推送 ----
+      - SYMBOLS=DOGS/USDT,TON/USDT       # 留空则只提供查询, 不主动推送
       - TZ=Asia/Singapore
+
+      # ---- 可选: 内容审核 ----
+      - AUTO_BAN_THRESHOLD=3             # 累计违规几次自动封禁; 设 0 只删消息不封禁
+      - DELETE_SERVICE_MESSAGES=true     # 自动清理"加入/退出群组"通知
+
+      # ---- 可选: AI 审核 (不设 AI_API_KEY 则整层关闭, 只跑确定性规则) ----
+      # - AI_API_KEY=sk-xxxxxx
+      # - AI_BASE_URL=https://ai.czl.net/v1
+      # - AI_MODEL=gpt-5.6-luna
+      # - AI_REASONING_EFFORT=high
+      # - AI_NEW_USER_MESSAGES=3         # 新用户前几条消息全量送审
+      # - AI_HOURLY_BUDGET=200           # 全局每小时调用上限
+      # - AI_MIN_CONFIDENCE=0.8          # 低于此置信度不处置
     volumes:
       - ./data:/app/data

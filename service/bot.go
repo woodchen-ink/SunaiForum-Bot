@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"SunaiForum-Bot/core"
+	"SunaiForum-Bot/service/command"
 	"SunaiForum-Bot/service/prompt_reply"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -32,7 +33,7 @@ func RunMessageHandler() error {
 	}
 
 	bot := core.Bot
-	if err := core.RegisterCommands(bot); err != nil {
+	if err := registerCommands(bot); err != nil {
 		return fmt.Errorf("注册机器人命令失败: %w", err)
 	}
 	log.Printf("[MessageHandler] 已授权账户 %s", bot.Self.UserName)
@@ -57,6 +58,19 @@ func RunMessageHandler() error {
 			delay = reconnectMaxDelay
 		}
 	}
+}
+
+// registerCommands 把命令菜单推给 Telegram。
+// 菜单内容由 command 包的定义表生成, 保证"菜单里有的命令一定实现了"。
+func registerCommands(bot *tgbotapi.BotAPI) error {
+	config := tgbotapi.NewSetMyCommands(command.MenuCommands()...)
+	config.LanguageCode = "" // 空字符串表示默认语言
+
+	if _, err := bot.Request(config); err != nil {
+		return err
+	}
+	log.Println("[MessageHandler] 命令菜单注册成功")
+	return nil
 }
 
 // consumeUpdates 建立更新通道并分发消息, 通道关闭后返回交由上层重连

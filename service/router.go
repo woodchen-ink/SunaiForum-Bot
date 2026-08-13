@@ -39,29 +39,12 @@ func handleUpdate(bot *tgbotapi.BotAPI, update tgbotapi.Update, rateLimiter *cor
 
 	if message.Chat.Type == "private" {
 		if core.IsAdmin(message.From.ID) {
-			handleAdminCommand(bot, message)
+			command.HandleAdmin(bot, message)
 		}
 		return
 	}
 
 	processMessage(bot, message, rateLimiter)
-}
-
-// handleAdminCommand 处理管理员私聊里的管理命令
-func handleAdminCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	cmd := message.Command()
-	args := message.CommandArguments()
-
-	switch cmd {
-	case "add", "delete", "list", "deletecontaining":
-		command.HandleKeyword(bot, message, cmd, args)
-	case "addwhite", "delwhite", "listwhite":
-		command.HandleWhitelist(bot, message, cmd, args)
-	case "prompt":
-		prompt_reply.HandlePromptCommand(bot, message)
-	default:
-		core.SendErrorMessage(bot, message.Chat.ID, "未知命令, 听不懂")
-	}
 }
 
 // processMessage 处理群消息。

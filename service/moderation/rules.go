@@ -109,6 +109,15 @@ var contactPatterns = []string{
 // pricePattern 数字紧跟金额单位, 例如 3K / 5000元 / 1.6万
 var pricePattern = regexp.MustCompile(`(?i)\d+\s*(k|w|元|块|万|千|刀|u|usdt)`)
 
+// linkPattern 匹配裸域名与带协议的 URL, 含 Telegram 短链。
+// 只用于"这条消息带链接吗"的弱信号判断 —— 群里允许分享链接, 带链接本身不构成拦截理由。
+var linkPattern = regexp.MustCompile(`(?i)\b(?:(?:https?://)?(?:(?:www\.)?(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}|(?:t\.me|telegram\.me))(?:/[^\s]*)?)`)
+
+// containsLink 判断文本里是否出现疑似链接
+func containsLink(text string) bool {
+	return linkPattern.MatchString(text)
+}
+
 // HasWeakSignal 判断文本是否值得花一次 AI 判定。
 //
 // 这是成本闸门, 不是判定依据: 命中只代表"可疑到值得看一眼", 单独命中不构成拦截理由。
@@ -128,7 +137,7 @@ func HasWeakSignal(text string) bool {
 	if pricePattern.MatchString(text) {
 		return true
 	}
-	if len(ExtractLinks(text)) > 0 {
+	if containsLink(text) {
 		return true
 	}
 	// 有拆字迹象但没到判定阈值的, 也送 AI 看一眼

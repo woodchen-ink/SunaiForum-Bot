@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// ModerationAction 一次审核处置的完整上下文
+// ModerationAction 一次审核处置的完整上下文 (对外形态, LearnedWords 已拆成切片)
 type ModerationAction struct {
 	ID           int64
 	UserID       int64
@@ -25,74 +25,57 @@ type ModerationAction struct {
 
 // RecordModerationAction 记录一次处置并返回其 id
 func (d *Database) RecordModerationAction(action ModerationAction) (int64, error) {
-	result, err := d.db.Exec(`
-		INSERT INTO moderation_actions
-			(user_id, chat_id, user_name, message_text, rule, learned_words, banned, undone, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-		action.UserID, action.ChatID, action.UserName, action.MessageText, action.Rule,
-		strings.Join(action.LearnedWords, "\n"), boolToInt(action.Banned), time.Now())
-	if err != nil {
+	row := ModerationActionRow{
+		UserID:       action.UserID,
+		ChatID:       action.ChatID,
+		UserName:     action.UserName,
+		MessageText:  action.MessageText,
+		Rule:         action.Rule,
+		LearnedWords: strings.Join(action.LearnedWords, "\n"),
+		Banned:       action.Banned,
+		CreatedAt:    time.Now(),
+	}
+	if err := d.db.Create(&row).Error; err != nil {
 		return 0, err
 	}
-	return result.LastInsertId()
+	return row.ID, nil
 }
 
 // GetModerationAction 按 id 取回处置详情
 func (d *Database) GetModerationAction(id int64) (ModerationAction, error) {
-	var (
-		action       ModerationAction
-		learnedWords string
-		banned       int
-		undone       int
-	)
-
-	err := d.db.QueryRow(`
-		SELECT id, user_id, chat_id, user_name, message_text, rule, learned_words, banned, undone, created_at
-		FROM moderation_actions WHERE id = ?`, id).
-		Scan(&action.ID, &action.UserID, &action.ChatID, &action.UserName, &action.MessageText,
-			&action.Rule, &learnedWords, &banned, &undone, &action.CreatedAt)
-	if err != nil {
+	var row ModerationActionRow
+	if err := d.db.First(&row, id).Error; err != nil {
 		return ModerationAction{}, err
 	}
 
-	action.Banned = banned != 0
-	action.Undone = undone != 0
-	if learnedWords != "" {
-		action.LearnedWords = strings.Split(learnedWords, "\n")
+	action := ModerationAction{
+		ID:          row.ID,
+		UserID:      row.UserID,
+		ChatID:      row.ChatID,
+		UserName:    row.UserName,
+		MessageText: row.MessageText,
+		Rule:        row.Rule,
+		Banned:      row.Banned,
+		Undone:      row.Undone,
+		CreatedAt:   row.CreatedAt,
+	}
+	if row.LearnedWords != "" {
+		action.LearnedWords = strings.Split(row.LearnedWords, "\n")
 	}
 	return action, nil
 }
 
-// MarkActionUndone 把处置标记为已撤销; 返回 false 表示此前已经撤销过, 调用方应避免重复回滚
+// MarkActionUndone 把处置标记为已撤销; 返回 false 表示此前已经撤销过。
+// 用条件更新实现幂等 —— 管理员连点两下按钮不该反复解封、反复扣分。
 func (d *Database) MarkActionUndone(id int64) (bool, error) {
-	result, err := d.db.Exec("UPDATE moderation_actions SET undone = 1 WHERE id = ? AND undone = 0", id)
-	if err != nil {
-		return false, err
-	}
-	rows, err := result.RowsAffected()
-	return rows > 0, err
+	result := d.db.Model(&ModerationActionRow{}).
+		Where("id = ? AND undone = ?", id, false).
+		Update("undone", true)
+	return result.RowsAffected > 0, result.Error
 }
 
 // CleanupOldActions 清理陈旧的处置记录
 func (d *Database) CleanupOldActions(olderThan time.Duration) (int64, error) {
-	result, err := d.db.Exec("DELETE FROM moderation_actions WHERE created_at < ?", time.Now().Add(-olderThan))
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
-// DecrementStrike 撤销一次违规计分, 不会减到负数
-func (d *Database) DecrementStrike(userID, chatID int64) error {
-	_, err := d.db.Exec(
-		"UPDATE user_strikes SET strikes = MAX(strikes - 1, 0) WHERE user_id = ? AND chat_id = ?",
-		userID, chatID)
-	return err
-}
-
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
+	result := d.db.Where("created_at < ?", time.Now().Add(-olderThan)).Delete(&ModerationActionRow{})
+	return result.RowsAffected, result.Error
 }

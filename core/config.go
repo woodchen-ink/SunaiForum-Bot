@@ -82,7 +82,7 @@ func Init() error {
 	if DB, err = NewDatabase(); err != nil {
 		return fmt.Errorf("初始化数据库失败: %w", err)
 	}
-	logTableCounts("keywords", "whitelist", "prompt_replies")
+	logTableCounts()
 
 	if Bot, err = tgbotapi.NewBotAPI(BotToken); err != nil {
 		return fmt.Errorf("创建 Bot API 失败: %w", err)
@@ -208,13 +208,21 @@ func loadBusinessTZ() *time.Location {
 }
 
 // logTableCounts 启动时打印各表记录数, 便于确认数据卷是否正确挂载
-func logTableCounts(tables ...string) {
-	for _, table := range tables {
-		count, err := DB.CountRecords(table)
+func logTableCounts() {
+	tables := []struct {
+		name  string
+		model any
+	}{
+		{"keywords", &Keyword{}},
+		{"prompt_replies", &PromptReply{}},
+	}
+
+	for _, t := range tables {
+		count, err := DB.CountRecords(t.model)
 		if err != nil {
-			log.Printf("[Core] 检查 %s 表记录数时出错: %v", table, err)
+			log.Printf("[Core] 检查 %s 表记录数时出错: %v", t.name, err)
 			continue
 		}
-		log.Printf("[Core] %s 表中有 %d 条记录", table, count)
+		log.Printf("[Core] %s 表中有 %d 条记录", t.name, count)
 	}
 }

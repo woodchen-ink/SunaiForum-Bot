@@ -1,8 +1,10 @@
 package core
 
-// 数据库连接、建表与列表缓存基础设施; 各张表的具体读写拆在 db_*.go
+// 数据库连接、迁移与列表缓存基础设施; 各张表的具体读写拆在 db_*.go
+//
+// 驱动用 glebarez/sqlite (纯 Go, 内部走 modernc.org/sqlite) 而不是 gorm.io/driver/sqlite,
+// 后者依赖 CGO, 会破坏 CGO_ENABLED=0 的 amd64/arm64 交叉编译。
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -11,7 +13,9 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // cacheTTL 列表缓存存活时间, 过期后回源查库; 写操作会主动失效对应缓存, 因此改动即时生效
@@ -22,7 +26,6 @@ type cacheKind int
 
 const (
 	cacheKeywords cacheKind = iota
-	cacheWhitelist
 )
 
 // cachedList 带加载时间的字符串列表缓存, 零值表示尚未加载
@@ -37,173 +40,77 @@ func (c *cachedList) expired() bool {
 }
 
 type Database struct {
-	db *sql.DB
+	db *gorm.DB
 
 	// mu 保护下面所有缓存字段
 	mu             sync.Mutex
-	manualKeywords cachedList // 手动维护的过滤关键词, 每条群消息都要读
-	whitelist      cachedList // 白名单域名
+	manualKeywords cachedList // 参与匹配的关键词, 每条群消息都要读
 }
 
-// NewDatabase 打开 SQLite 连接并确保所有表存在
+// NewDatabase 打开 SQLite 连接并把 schema 迁移到最新
 func NewDatabase() (*Database, error) {
 	if err := os.MkdirAll(filepath.Dir(DBFile), os.ModePerm); err != nil {
 		return nil, fmt.Errorf("创建数据目录失败: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", DBFile)
+	gormLogLevel := logger.Warn
+	if DebugMode {
+		gormLogLevel = logger.Info
+	}
+
+	db, err := gorm.Open(sqlite.Open(DBFile), &gorm.Config{
+		Logger: logger.Default.LogMode(gormLogLevel),
+		// 表名已由各模型的 TableName() 显式指定, 关掉复数化避免歧义
+		NamingStrategy: nil,
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
 
 	database := &Database{db: db}
-	if err := database.createTables(); err != nil {
+	if err := database.migrate(); err != nil {
 		return nil, err
 	}
 
 	return database, nil
 }
 
-// createTables 幂等建表, 每次启动都会执行
-func (d *Database) createTables() error {
-	queries := []string{
-		`CREATE TABLE IF NOT EXISTS keywords (
-					id INTEGER PRIMARY KEY,
-					keyword TEXT UNIQUE,
-					is_link BOOLEAN DEFAULT FALSE,
-					is_auto_added BOOLEAN DEFAULT FALSE,
-					added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-			)`,
-		`CREATE INDEX IF NOT EXISTS idx_keyword ON keywords(keyword)`,
-		`CREATE INDEX IF NOT EXISTS idx_added_at ON keywords(added_at)`,
-		`CREATE TABLE IF NOT EXISTS whitelist (
-					id INTEGER PRIMARY KEY,
-					domain TEXT UNIQUE
-			)`,
-		`CREATE INDEX IF NOT EXISTS idx_domain ON whitelist(domain)`,
-		`CREATE TABLE IF NOT EXISTS prompt_replies (
-					prompt TEXT PRIMARY KEY,
-					reply TEXT NOT NULL
-			)`,
-		`CREATE TABLE IF NOT EXISTS config (
-					key TEXT PRIMARY KEY,
-					value TEXT
-			)`,
-		`CREATE TABLE IF NOT EXISTS keyword_rejects (
-					keyword TEXT PRIMARY KEY,
-					rejected_at TIMESTAMP
-			)`,
-		`CREATE TABLE IF NOT EXISTS moderation_actions (
-					id INTEGER PRIMARY KEY AUTOINCREMENT,
-					user_id INTEGER NOT NULL,
-					chat_id INTEGER NOT NULL,
-					user_name TEXT,
-					message_text TEXT,
-					rule TEXT,
-					learned_words TEXT,
-					banned INTEGER NOT NULL DEFAULT 0,
-					undone INTEGER NOT NULL DEFAULT 0,
-					created_at TIMESTAMP
-			)`,
-		`CREATE TABLE IF NOT EXISTS user_stats (
-					user_id INTEGER NOT NULL,
-					chat_id INTEGER NOT NULL,
-					message_count INTEGER NOT NULL DEFAULT 0,
-					first_seen_at TIMESTAMP,
-					last_seen_at TIMESTAMP,
-					PRIMARY KEY (user_id, chat_id)
-			)`,
-		`CREATE TABLE IF NOT EXISTS user_strikes (
-					user_id INTEGER NOT NULL,
-					chat_id INTEGER NOT NULL,
-					strikes INTEGER NOT NULL DEFAULT 0,
-					last_hit_at TIMESTAMP,
-					PRIMARY KEY (user_id, chat_id)
-			)`,
-	}
-
-	for _, query := range queries {
-		if _, err := d.db.Exec(query); err != nil {
-			return fmt.Errorf("执行建表语句失败 '%s': %w", query, err)
-		}
-	}
-
-	// 增量列: 老库里 keywords 表没有这两列, 需要在原表上补齐
-	migrations := []struct{ table, column, ddl string }{
-		{"keywords", "source", "TEXT NOT NULL DEFAULT 'manual'"},
-		{"keywords", "hit_count", "INTEGER NOT NULL DEFAULT 0"},
-	}
-	for _, m := range migrations {
-		if err := d.addColumnIfMissing(m.table, m.column, m.ddl); err != nil {
-			return err
-		}
-	}
-
-	log.Println("[Database] 所有必要的表都已创建")
-	return nil
-}
-
-// addColumnIfMissing 幂等地给已有表补一列; SQLite 不支持 ADD COLUMN IF NOT EXISTS, 只能先查再加
-func (d *Database) addColumnIfMissing(table, column, ddl string) error {
-	rows, err := d.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
-	if err != nil {
-		return fmt.Errorf("读取表 %s 结构失败: %w", table, err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var (
-			cid, notNull, pk int
-			name, colType    string
-			defaultValue     any
-		)
-		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultValue, &pk); err != nil {
-			return fmt.Errorf("解析表 %s 结构失败: %w", table, err)
-		}
-		if name == column {
-			return nil
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	if _, err := d.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, ddl)); err != nil {
-		return fmt.Errorf("为表 %s 添加列 %s 失败: %w", table, column, err)
-	}
-	log.Printf("[Database] 已为表 %s 添加列 %s", table, column)
-	return nil
-}
-
-// executeQuery 执行单列查询并收集为字符串切片
-func (d *Database) executeQuery(query string, args ...any) ([]string, error) {
-	rows, err := d.db.Query(query, args...)
+// NewDatabaseAt 在指定路径打开数据库, 供测试使用, 不触碰全局 DBFile
+func NewDatabaseAt(path string) (*Database, error) {
+	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var results []string
-	for rows.Next() {
-		var result string
-		if err := rows.Scan(&result); err != nil {
-			return nil, err
-		}
-		results = append(results, result)
+	database := &Database{db: db}
+	if err := database.migrate(); err != nil {
+		return nil, err
 	}
+	return database, nil
+}
 
-	return results, rows.Err()
+// migrate 把 schema 对齐到 models.go 的定义。
+// AutoMigrate 只增不减: 会补齐缺失的表、列和索引, 不会删除或重命名已有的东西,
+// 因此在存量库上是安全的 —— 这一点由 database_test.go 用真实老 schema 验证。
+func (d *Database) migrate() error {
+	if err := d.db.AutoMigrate(allModels()...); err != nil {
+		return fmt.Errorf("数据库迁移失败: %w", err)
+	}
+	log.Println("[Database] schema 已对齐")
+	return nil
 }
 
 // queryCached 读取带 TTL 的列表缓存, 未命中时回源查库。
 // 返回的是副本, 调用方修改不会污染缓存。
-func (d *Database) queryCached(kind cacheKind, query string, args ...any) ([]string, error) {
+func (d *Database) queryCached(kind cacheKind, load func() ([]string, error)) ([]string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	cache := d.cacheOf(kind)
 	if cache.expired() {
-		items, err := d.executeQuery(query, args...)
+		items, err := load()
 		if err != nil {
 			return nil, err
 		}
@@ -224,39 +131,28 @@ func (d *Database) invalidateCache(kind cacheKind) {
 }
 
 // cacheOf 取指定种类的缓存指针; 调用方必须已持有 d.mu
-func (d *Database) cacheOf(kind cacheKind) *cachedList {
-	if kind == cacheWhitelist {
-		return &d.whitelist
-	}
+func (d *Database) cacheOf(cacheKind) *cachedList {
 	return &d.manualKeywords
 }
 
-// CountRecords 统计指定表的记录数; 表名走白名单校验, 防止拼接注入
-func (d *Database) CountRecords(tableName string) (int, error) {
-	allowedTables := map[string]bool{
-		"keywords":       true,
-		"whitelist":      true,
-		"prompt_replies": true,
-		"config":         true,
-	}
-
-	if !allowedTables[tableName] {
-		return 0, fmt.Errorf("invalid table name: %s", tableName)
-	}
-
-	var count int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
-	if err := d.db.QueryRow(query).Scan(&count); err != nil {
-		return 0, fmt.Errorf("统计表 %s 记录数失败: %w", tableName, err)
+// CountRecords 统计指定模型的记录数
+func (d *Database) CountRecords(model any) (int64, error) {
+	var count int64
+	if err := d.db.Model(model).Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("统计记录数失败: %w", err)
 	}
 	return count, nil
 }
 
 func (d *Database) Close() error {
-	return d.db.Close()
+	sqlDB, err := d.db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
 }
 
 // isNoRows 判断错误是否为"查询无结果", 供各 db_*.go 把空结果转成零值
 func isNoRows(err error) bool {
-	return errors.Is(err, sql.ErrNoRows)
+	return errors.Is(err, gorm.ErrRecordNotFound)
 }
