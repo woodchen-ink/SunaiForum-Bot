@@ -1,11 +1,7 @@
 package core
 
 // config 表读写; 存放需要跨容器重启保留的运行时状态 (键值对)
-import (
-	"database/sql"
-	"errors"
-	"fmt"
-)
+import "fmt"
 
 func (d *Database) SetConfig(key, value string) error {
 	_, err := d.db.Exec("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", key, value)
@@ -20,7 +16,7 @@ func (d *Database) GetConfig(key string) (string, error) {
 	var value string
 	err := d.db.QueryRow("SELECT value FROM config WHERE key = ?", key).Scan(&value)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if isNoRows(err) {
 			return "", nil
 		}
 		return "", fmt.Errorf("读取配置 %s 失败: %w", key, err)

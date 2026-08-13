@@ -25,8 +25,16 @@ var (
 	DBFile      string
 	DebugMode   bool
 
+	// AutoBanThreshold 累计违规多少次后自动封禁, 0 表示只删消息不封禁
+	AutoBanThreshold int
+	// DeleteServiceMessages 是否自动清理"加入/退出群组"这类群务通知
+	DeleteServiceMessages bool
+
 	DB *Database
 )
+
+// defaultAutoBanThreshold AUTO_BAN_THRESHOLD 未配置时的默认值
+const defaultAutoBanThreshold = 3
 
 // Init 按依赖顺序完成启动初始化, 任一必需项缺失都返回错误由 main 终止进程
 func Init() error {
@@ -45,6 +53,8 @@ func Init() error {
 
 	DebugMode = os.Getenv("DEBUG_MODE") == "true"
 	Symbols = parseSymbols(os.Getenv("SYMBOLS"))
+	AutoBanThreshold = parseIntEnv("AUTO_BAN_THRESHOLD", defaultAutoBanThreshold)
+	DeleteServiceMessages = parseBoolEnv("DELETE_SERVICE_MESSAGES", true)
 	SingaporeTZ = loadBusinessTZ()
 	time.Local = SingaporeTZ
 
@@ -81,6 +91,33 @@ func parseInt64(s string) (int64, error) {
 	}
 
 	return value, nil
+}
+
+// parseIntEnv 读取可选的整数型环境变量, 缺失或非法时回退默认值并告警
+func parseIntEnv(name string, fallback int) int {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return fallback
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		log.Printf("[Core] 环境变量 %s=%q 非法, 使用默认值 %d", name, raw, fallback)
+		return fallback
+	}
+	return value
+}
+
+// parseBoolEnv 读取可选的布尔型环境变量, 缺失时用默认值; 只有明确写 false/0/no 才关闭
+func parseBoolEnv(name string, fallback bool) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "":
+		return fallback
+	case "false", "0", "no", "off":
+		return false
+	default:
+		return true
+	}
 }
 
 // parseSymbols 把 "DOGS/USDT,TON/USDT" 解析为币安接口需要的 ["DOGSUSDT","TONUSDT"];

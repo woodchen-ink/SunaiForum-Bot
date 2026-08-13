@@ -3,6 +3,7 @@ package core
 // 数据库连接、建表与列表缓存基础设施; 各张表的具体读写拆在 db_*.go
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -88,6 +89,17 @@ func (d *Database) createTables() error {
 					key TEXT PRIMARY KEY,
 					value TEXT
 			)`,
+		`CREATE TABLE IF NOT EXISTS keyword_rejects (
+					keyword TEXT PRIMARY KEY,
+					rejected_at TIMESTAMP
+			)`,
+		`CREATE TABLE IF NOT EXISTS user_strikes (
+					user_id INTEGER NOT NULL,
+					chat_id INTEGER NOT NULL,
+					strikes INTEGER NOT NULL DEFAULT 0,
+					last_hit_at TIMESTAMP,
+					PRIMARY KEY (user_id, chat_id)
+			)`,
 	}
 
 	for _, query := range queries {
@@ -96,7 +108,50 @@ func (d *Database) createTables() error {
 		}
 	}
 
+	// 增量列: 老库里 keywords 表没有这两列, 需要在原表上补齐
+	migrations := []struct{ table, column, ddl string }{
+		{"keywords", "source", "TEXT NOT NULL DEFAULT 'manual'"},
+		{"keywords", "hit_count", "INTEGER NOT NULL DEFAULT 0"},
+	}
+	for _, m := range migrations {
+		if err := d.addColumnIfMissing(m.table, m.column, m.ddl); err != nil {
+			return err
+		}
+	}
+
 	log.Println("[Database] 所有必要的表都已创建")
+	return nil
+}
+
+// addColumnIfMissing 幂等地给已有表补一列; SQLite 不支持 ADD COLUMN IF NOT EXISTS, 只能先查再加
+func (d *Database) addColumnIfMissing(table, column, ddl string) error {
+	rows, err := d.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return fmt.Errorf("读取表 %s 结构失败: %w", table, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			cid, notNull, pk int
+			name, colType    string
+			defaultValue     any
+		)
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultValue, &pk); err != nil {
+			return fmt.Errorf("解析表 %s 结构失败: %w", table, err)
+		}
+		if name == column {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	if _, err := d.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, ddl)); err != nil {
+		return fmt.Errorf("为表 %s 添加列 %s 失败: %w", table, column, err)
+	}
+	log.Printf("[Database] 已为表 %s 添加列 %s", table, column)
 	return nil
 }
 
@@ -179,4 +234,9 @@ func (d *Database) CountRecords(tableName string) (int, error) {
 
 func (d *Database) Close() error {
 	return d.db.Close()
+}
+
+// isNoRows 判断错误是否为"查询无结果", 供各 db_*.go 把空结果转成零值
+func isNoRows(err error) bool {
+	return errors.Is(err, sql.ErrNoRows)
 }

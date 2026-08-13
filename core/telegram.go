@@ -57,6 +57,26 @@ func DeleteMessageAfterDelay(bot *tgbotapi.BotAPI, chatID int64, messageID int, 
 	}()
 }
 
+// BanUser 永久封禁并踢出群成员
+func BanUser(bot *tgbotapi.BotAPI, chatID, userID int64) error {
+	kickConfig := tgbotapi.KickChatMemberConfig{
+		ChatMemberConfig: tgbotapi.ChatMemberConfig{
+			ChatID: chatID,
+			UserID: userID,
+		},
+		UntilDate: 0, // 0 表示永久
+	}
+	_, err := bot.Request(kickConfig)
+	return err
+}
+
+// NotifyAdmin 私聊推送一条运维通知给管理员; 发送失败只记日志, 不影响主流程
+func NotifyAdmin(bot *tgbotapi.BotAPI, text string) {
+	if err := SendMessage(bot, AdminID, text); err != nil {
+		log.Printf("[Core] 通知管理员失败: %v", err)
+	}
+}
+
 // DeleteMessages 立即批量删除消息, 逐条失败只记录不中断
 func DeleteMessages(bot *tgbotapi.BotAPI, chatID int64, messageIDs ...int) {
 	for _, msgID := range messageIDs {

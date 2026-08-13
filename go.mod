@@ -5,6 +5,7 @@ go 1.24
 require (
 	github.com/adshao/go-binance/v2 v2.8.0
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
+	github.com/siongui/gojianfan v0.0.0-20210926212422-2f175ac615de
 	modernc.org/sqlite v1.34.5
 )
 

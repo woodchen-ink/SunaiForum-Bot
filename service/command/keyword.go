@@ -30,22 +30,50 @@ func HandleKeyword(bot *tgbotapi.BotAPI, message *tgbotapi.Message, cmd, args st
 	}
 }
 
+// listKeywords 分来源展示词表: 手工词按字母序, AI 词按命中次数降序,
+// 让管理员一眼看出哪些 AI 词在真正起作用、哪些是零命中该清理的
 func listKeywords(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	keywords, err := core.DB.GetAllManualKeywords()
+	manual, err := core.DB.GetKeywordsBySource(core.SourceManual)
 	if err != nil {
 		core.SendErrorMessage(bot, message.Chat.ID, "获取关键词列表时发生错误。")
-		log.Printf("[Command] 获取关键词列表失败: %v", err)
+		log.Printf("[Command] 获取手工关键词失败: %v", err)
+		return
+	}
+	aiKeywords, err := core.DB.GetKeywordsBySource(core.SourceAI)
+	if err != nil {
+		core.SendErrorMessage(bot, message.Chat.ID, "获取 AI 关键词列表时发生错误。")
+		log.Printf("[Command] 获取 AI 关键词失败: %v", err)
 		return
 	}
 
-	if len(keywords) == 0 {
+	if len(manual) == 0 && len(aiKeywords) == 0 {
 		core.SendMessage(bot, message.Chat.ID, "关键词列表为空。")
 		return
 	}
 
-	sort.Strings(keywords)
-	if err := core.SendLongMessage(bot, message.Chat.ID, "关键词列表（按字母顺序排序）：", keywords); err != nil {
-		core.SendErrorMessage(bot, message.Chat.ID, "发送关键词列表时发生错误。")
+	manualWords := make([]string, 0, len(manual))
+	for _, k := range manual {
+		manualWords = append(manualWords, k.Word)
+	}
+	sort.Strings(manualWords)
+
+	if len(manualWords) > 0 {
+		if err := core.SendLongMessage(bot, message.Chat.ID,
+			fmt.Sprintf("手工关键词（%d 条，按字母排序）：", len(manualWords)), manualWords); err != nil {
+			core.SendErrorMessage(bot, message.Chat.ID, "发送关键词列表时发生错误。")
+			return
+		}
+	}
+
+	if len(aiKeywords) > 0 {
+		aiWords := make([]string, 0, len(aiKeywords))
+		for _, k := range aiKeywords {
+			aiWords = append(aiWords, fmt.Sprintf("%s（命中 %d 次）", k.Word, k.HitCount))
+		}
+		if err := core.SendLongMessage(bot, message.Chat.ID,
+			fmt.Sprintf("AI 关键词（%d 条，按命中次数排序，删除即永久否决）：", len(aiWords)), aiWords); err != nil {
+			core.SendErrorMessage(bot, message.Chat.ID, "发送 AI 关键词列表时发生错误。")
+		}
 	}
 }
 
@@ -67,7 +95,7 @@ func addKeyword(bot *tgbotapi.BotAPI, message *tgbotapi.Message, keyword string)
 		return
 	}
 
-	if err := core.DB.AddKeyword(keyword); err != nil {
+	if _, err := core.DB.AddKeyword(keyword, core.SourceManual); err != nil {
 		core.SendErrorMessage(bot, message.Chat.ID, "添加关键词时发生错误。")
 		log.Printf("[Command] 添加关键词失败: %v", err)
 		return
