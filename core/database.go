@@ -41,6 +41,8 @@ func (c *cachedList) expired() bool {
 
 type Database struct {
 	db *gorm.DB
+	// path 库文件路径, 快照要据此定位存放目录; 不复用全局 DBFile 是为了让测试能指向临时目录
+	path string
 
 	// mu 保护下面所有缓存字段
 	mu             sync.Mutex
@@ -67,10 +69,17 @@ func NewDatabase() (*Database, error) {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
 
-	database := &Database{db: db}
+	database := &Database{db: db, path: DBFile}
+
+	// 顺序不能反: 先快照再采样, 最后才动 schema。快照是唯一的回滚手段,
+	// 采样是发现"迁移把数据搞没了"的唯一手段 —— 两者都必须在迁移之前完成。
+	snapshot := database.backupBeforeMigrate(BackupKeep)
+	before := database.probeTables()
+
 	if err := database.migrate(); err != nil {
 		return nil, err
 	}
+	database.verifyMigration(before, snapshot)
 
 	return database, nil
 }
@@ -84,7 +93,7 @@ func NewDatabaseAt(path string) (*Database, error) {
 		return nil, err
 	}
 
-	database := &Database{db: db}
+	database := &Database{db: db, path: path}
 	if err := database.migrate(); err != nil {
 		return nil, err
 	}

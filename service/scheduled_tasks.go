@@ -3,6 +3,7 @@ package service
 // 后台定时任务
 import (
 	"log"
+	"path/filepath"
 	"time"
 
 	"SunaiForum-Bot/core"
@@ -43,6 +44,7 @@ func periodicCleanup() {
 
 // runCleanup 跑一轮全部清理动作
 func runCleanup() {
+	snapshotDatabase()
 	cleanupLegacyAutoLinks()
 	cleanupStaleStrikes()
 	cleanupRows("陈旧发言统计", func() (int64, error) { return core.DB.CleanupStaleUserStats(userStatsTTL) })
@@ -51,6 +53,16 @@ func runCleanup() {
 	if removed := moderation.PruneRepeatHistory(repeatHistoryTTL); removed > 0 {
 		log.Printf("[Scheduler] 已清理 %d 个不活跃用户的刷屏记录", removed)
 	}
+}
+
+// snapshotDatabase 生成每日数据库快照; 失败只告警, 不影响其余清理任务
+func snapshotDatabase() {
+	path, err := core.DB.Backup("daily", core.BackupKeep)
+	if err != nil {
+		log.Printf("[Scheduler] 生成数据库快照失败: %v", err)
+		return
+	}
+	log.Printf("[Scheduler] 数据库快照已生成: %s", filepath.Base(path))
 }
 
 // cleanupRows 跑一个删除类清理并统一记日志

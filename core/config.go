@@ -29,6 +29,8 @@ var (
 	AutoBanThreshold int
 	// DeleteServiceMessages 是否自动清理"加入/退出群组"这类群务通知
 	DeleteServiceMessages bool
+	// BackupKeep 保留最近多少份数据库快照, 0 表示不清理旧快照
+	BackupKeep int
 
 	// AI 审核配置; AIAPIKey 为空时整个 AI 层关闭, 只跑确定性规则
 	AIEnabled          bool
@@ -54,6 +56,7 @@ const (
 	defaultAIMinConfidence  = 0.8
 	defaultCurationInterval = 7 * 24 * time.Hour
 	defaultTimezone         = "Asia/Shanghai"
+	defaultBackupKeep       = 7
 )
 
 // Init 按依赖顺序完成启动初始化, 任一必需项缺失都返回错误由 main 终止进程
@@ -75,6 +78,7 @@ func Init() error {
 	Symbols = parseSymbols(os.Getenv("SYMBOLS"))
 	AutoBanThreshold = parseIntEnv("AUTO_BAN_THRESHOLD", defaultAutoBanThreshold)
 	DeleteServiceMessages = parseBoolEnv("DELETE_SERVICE_MESSAGES", true)
+	BackupKeep = parseIntEnv("BACKUP_KEEP", defaultBackupKeep)
 	initAIConfig()
 	BusinessTZ = loadBusinessTZ(envOr("TZ", defaultTimezone))
 	time.Local = BusinessTZ

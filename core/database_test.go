@@ -14,16 +14,21 @@ import (
 	_ "github.com/glebarez/go-sqlite"
 )
 
-// legacySchema 迁移到 GORM 之前, 由 createTables() 手写建出来的表结构
+// legacySchema **真正跑在生产上的**迁移前 schema。
+//
+// 关键: 这里不能带 source / hit_count 两列 —— 生产库是 batch2 之前的老代码建的, 没有这两列,
+// AutoMigrate 需要新增它们。早先的版本图省事把这两列写进了"老 schema", 结果测的是
+// "新->新"而不是"老->新", 真正的迁移路径从未被覆盖, 上线后 keywords 表的
+// keyword 与 added_at 两列数据在整表重建中被清空。
+//
+// 新增任何列或索引之后, 这份 schema 都不要跟着改 —— 它必须永远代表历史存量库的形态。
 var legacySchema = []string{
 	`CREATE TABLE IF NOT EXISTS keywords (
 		id INTEGER PRIMARY KEY,
 		keyword TEXT UNIQUE,
 		is_link BOOLEAN DEFAULT FALSE,
 		is_auto_added BOOLEAN DEFAULT FALSE,
-		added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		source TEXT NOT NULL DEFAULT 'manual',
-		hit_count INTEGER NOT NULL DEFAULT 0
+		added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_keyword ON keywords(keyword)`,
 	`CREATE INDEX IF NOT EXISTS idx_added_at ON keywords(added_at)`,
@@ -31,25 +36,6 @@ var legacySchema = []string{
 	`CREATE INDEX IF NOT EXISTS idx_domain ON whitelist(domain)`,
 	`CREATE TABLE IF NOT EXISTS prompt_replies (prompt TEXT PRIMARY KEY, reply TEXT NOT NULL)`,
 	`CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)`,
-	`CREATE TABLE IF NOT EXISTS keyword_rejects (keyword TEXT PRIMARY KEY, rejected_at TIMESTAMP)`,
-	`CREATE TABLE IF NOT EXISTS user_strikes (
-		user_id INTEGER NOT NULL, chat_id INTEGER NOT NULL,
-		strikes INTEGER NOT NULL DEFAULT 0, last_hit_at TIMESTAMP,
-		PRIMARY KEY (user_id, chat_id)
-	)`,
-	`CREATE TABLE IF NOT EXISTS user_stats (
-		user_id INTEGER NOT NULL, chat_id INTEGER NOT NULL,
-		message_count INTEGER NOT NULL DEFAULT 0,
-		first_seen_at TIMESTAMP, last_seen_at TIMESTAMP,
-		PRIMARY KEY (user_id, chat_id)
-	)`,
-	`CREATE TABLE IF NOT EXISTS moderation_actions (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		user_id INTEGER NOT NULL, chat_id INTEGER NOT NULL,
-		user_name TEXT, message_text TEXT, rule TEXT, learned_words TEXT,
-		banned INTEGER NOT NULL DEFAULT 0, undone INTEGER NOT NULL DEFAULT 0,
-		created_at TIMESTAMP
-	)`,
 }
 
 // legacyData 迁移前写入的样本数据, 迁移后必须一条不少地读回来
@@ -57,21 +43,14 @@ var legacyData = []struct {
 	query string
 	args  []any
 }{
-	{`INSERT INTO keywords (keyword, is_link, is_auto_added, added_at, source, hit_count) VALUES (?,?,?,?,?,?)`,
-		[]any{"水果机", false, false, time.Now(), "manual", 7}},
-	{`INSERT INTO keywords (keyword, is_link, is_auto_added, added_at, source, hit_count) VALUES (?,?,?,?,?,?)`,
-		[]any{"日入1w", false, false, time.Now(), "ai", 3}},
-	{`INSERT INTO keywords (keyword, is_link, is_auto_added, added_at, source, hit_count) VALUES (?,?,?,?,?,?)`,
-		[]any{"legacy.example.com", true, true, time.Now().AddDate(0, -6, 0), "manual", 0}},
+	{`INSERT INTO keywords (keyword, is_link, is_auto_added, added_at) VALUES (?,?,?,?)`,
+		[]any{"水果机", false, false, time.Now()}},
+	{`INSERT INTO keywords (keyword, is_link, is_auto_added, added_at) VALUES (?,?,?,?)`,
+		[]any{"日入1w", false, false, time.Now()}},
+	{`INSERT INTO keywords (keyword, is_link, is_auto_added, added_at) VALUES (?,?,?,?)`,
+		[]any{"legacy.example.com", true, true, time.Now().AddDate(0, -6, 0)}},
 	{`INSERT INTO prompt_replies (prompt, reply) VALUES (?,?)`, []any{"你好", "你也好"}},
 	{`INSERT INTO config (key, value) VALUES (?,?)`, []any{"binance_last_msg_id", "12345"}},
-	{`INSERT INTO keyword_rejects (keyword, rejected_at) VALUES (?,?)`, []any{"多少", time.Now()}},
-	{`INSERT INTO user_strikes (user_id, chat_id, strikes, last_hit_at) VALUES (?,?,?,?)`,
-		[]any{int64(1001), int64(-100200), 2, time.Now()}},
-	{`INSERT INTO user_stats (user_id, chat_id, message_count, first_seen_at, last_seen_at) VALUES (?,?,?,?,?)`,
-		[]any{int64(1001), int64(-100200), 5, time.Now(), time.Now()}},
-	{`INSERT INTO moderation_actions (user_id, chat_id, user_name, message_text, rule, learned_words, banned, undone, created_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-		[]any{int64(1001), int64(-100200), "spammer", "水·果·特·價", "关键词", "水果机\n特价", 0, 0, time.Now()}},
 }
 
 // buildLegacyDB 造一个迁移前形态的库并塞入样本数据
@@ -118,20 +97,18 @@ func TestAutoMigratePreservesLegacyData(t *testing.T) {
 			t.Errorf("参与匹配的关键词数 = %d, 期望 2 (实际: %v)", len(keywords), keywords)
 		}
 
+		// 老库没有 source 列, AutoMigrate 补列后存量行应当全部落到默认的 manual
 		manual, err := db.GetKeywordsBySource(SourceManual)
 		if err != nil {
 			t.Fatalf("按来源读取失败: %v", err)
 		}
-		if len(manual) != 1 || manual[0].Word != "水果机" || manual[0].HitCount != 7 {
-			t.Errorf("手工词读取错误: %+v", manual)
+		if len(manual) != 2 {
+			t.Fatalf("手工词数 = %d, 期望 2 (实际: %+v)", len(manual), manual)
 		}
-
-		ai, err := db.GetKeywordsBySource(SourceAI)
-		if err != nil {
-			t.Fatalf("按来源读取 AI 词失败: %v", err)
-		}
-		if len(ai) != 1 || ai[0].Word != "日入1w" {
-			t.Errorf("AI 词读取错误: %+v", ai)
+		for _, k := range manual {
+			if k.Word == "" {
+				t.Errorf("关键词内容在迁移中丢失: %+v", k)
+			}
 		}
 	})
 
@@ -153,32 +130,19 @@ func TestAutoMigratePreservesLegacyData(t *testing.T) {
 		}
 	})
 
-	t.Run("计分与统计", func(t *testing.T) {
-		strikes, err := db.GetStrikes(1001, -100200)
-		if err != nil || strikes != 2 {
-			t.Errorf("违规计分读取错误: %d, err=%v", strikes, err)
+	// batch2/3 才引入的表在老库里不存在, AutoMigrate 应当把它们建出来并可正常读写
+	t.Run("新增表可用", func(t *testing.T) {
+		if _, err := db.AddStrike(1001, -100200); err != nil {
+			t.Errorf("写入违规计分失败: %v", err)
 		}
-
-		count, err := db.BumpUserMessageCount(1001, -100200)
-		if err != nil || count != 6 {
-			t.Errorf("发言计数累加错误: %d, err=%v", count, err)
+		if _, err := db.BumpUserMessageCount(1001, -100200); err != nil {
+			t.Errorf("写入发言统计失败: %v", err)
 		}
-	})
-
-	t.Run("处置记录", func(t *testing.T) {
-		action, err := db.GetModerationAction(1)
-		if err != nil {
-			t.Fatalf("读取处置记录失败: %v", err)
+		if err := db.RejectKeyword("多少"); err != nil {
+			t.Errorf("写入否决表失败: %v", err)
 		}
-		if action.UserName != "spammer" || len(action.LearnedWords) != 2 {
-			t.Errorf("处置记录读取错误: %+v", action)
-		}
-	})
-
-	t.Run("否决表", func(t *testing.T) {
-		rejected, err := db.IsKeywordRejected("多少")
-		if err != nil || !rejected {
-			t.Errorf("否决表读取错误: %v, err=%v", rejected, err)
+		if _, err := db.RecordModerationAction(ModerationAction{UserID: 1, ChatID: -1}); err != nil {
+			t.Errorf("写入处置记录失败: %v", err)
 		}
 	})
 }
