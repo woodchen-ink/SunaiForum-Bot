@@ -30,11 +30,30 @@ var (
 	// DeleteServiceMessages 是否自动清理"加入/退出群组"这类群务通知
 	DeleteServiceMessages bool
 
+	// AI 审核配置; AIAPIKey 为空时整个 AI 层关闭, 只跑确定性规则
+	AIEnabled          bool
+	AIBaseURL          string
+	AIAPIKey           string
+	AIModel            string
+	AIReasoningEffort  string
+	AINewUserMessages  int // 新用户前多少条消息全量送 AI 审核
+	AIHourlyBudget     int // 全局每小时最大调用次数, 防止异常情况下跑量
+	AIMinConfidence    float64
+	AICurationInterval time.Duration // AI 整理词表的间隔
+
 	DB *Database
 )
 
-// defaultAutoBanThreshold AUTO_BAN_THRESHOLD 未配置时的默认值
-const defaultAutoBanThreshold = 3
+const (
+	defaultAutoBanThreshold = 3
+	defaultAIBaseURL        = "https://ai.czl.net/v1"
+	defaultAIModel          = "gpt-5.6-luna"
+	defaultAIReasoning      = "high"
+	defaultAINewUserMsgs    = 3
+	defaultAIHourlyBudget   = 200
+	defaultAIMinConfidence  = 0.8
+	defaultCurationInterval = 7 * 24 * time.Hour
+)
 
 // Init 按依赖顺序完成启动初始化, 任一必需项缺失都返回错误由 main 终止进程
 func Init() error {
@@ -55,6 +74,7 @@ func Init() error {
 	Symbols = parseSymbols(os.Getenv("SYMBOLS"))
 	AutoBanThreshold = parseIntEnv("AUTO_BAN_THRESHOLD", defaultAutoBanThreshold)
 	DeleteServiceMessages = parseBoolEnv("DELETE_SERVICE_MESSAGES", true)
+	initAIConfig()
 	SingaporeTZ = loadBusinessTZ()
 	time.Local = SingaporeTZ
 
@@ -91,6 +111,50 @@ func parseInt64(s string) (int64, error) {
 	}
 
 	return value, nil
+}
+
+// initAIConfig 读取 AI 审核相关配置。
+// AI_API_KEY 缺失即整层关闭 —— 没有密钥时静默降级到确定性规则, 而不是每条消息都报错。
+func initAIConfig() {
+	AIAPIKey = os.Getenv("AI_API_KEY")
+	AIBaseURL = strings.TrimSuffix(envOr("AI_BASE_URL", defaultAIBaseURL), "/")
+	AIModel = envOr("AI_MODEL", defaultAIModel)
+	AIReasoningEffort = envOr("AI_REASONING_EFFORT", defaultAIReasoning)
+	AINewUserMessages = parseIntEnv("AI_NEW_USER_MESSAGES", defaultAINewUserMsgs)
+	AIHourlyBudget = parseIntEnv("AI_HOURLY_BUDGET", defaultAIHourlyBudget)
+	AIMinConfidence = parseFloatEnv("AI_MIN_CONFIDENCE", defaultAIMinConfidence)
+	AICurationInterval = defaultCurationInterval
+
+	AIEnabled = AIAPIKey != "" && parseBoolEnv("AI_ENABLED", true)
+	if AIEnabled {
+		log.Printf("[Core] AI 审核已启用: model=%s effort=%s 新用户前 %d 条 每小时上限 %d 次",
+			AIModel, AIReasoningEffort, AINewUserMessages, AIHourlyBudget)
+	} else {
+		log.Println("[Core] AI 审核未启用 (AI_API_KEY 未设置), 只运行确定性规则")
+	}
+}
+
+// envOr 读取环境变量, 为空时返回默认值
+func envOr(name, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(name)); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// parseFloatEnv 读取可选的浮点型环境变量, 缺失或非法时回退默认值
+func parseFloatEnv(name string, fallback float64) float64 {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return fallback
+	}
+
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil || value < 0 || value > 1 {
+		log.Printf("[Core] 环境变量 %s=%q 非法, 使用默认值 %v", name, raw, fallback)
+		return fallback
+	}
+	return value
 }
 
 // parseIntEnv 读取可选的整数型环境变量, 缺失或非法时回退默认值并告警

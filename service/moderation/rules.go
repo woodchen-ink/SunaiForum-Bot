@@ -3,6 +3,7 @@ package moderation
 // 形态规则: 不依赖词库, 只看文本的写法特征和发送节奏。
 // 广告可以随时换词, 但"逐字插分隔符"和"定时重复刷屏"这两个形态很难放弃, 因此这类规则比关键词更耐用。
 import (
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -96,6 +97,68 @@ func isSuspiciousSeparator(sep []rune, prev, next rune) bool {
 		return false
 	}
 	return true
+}
+
+// contactPatterns 引流话术特征; 命中不直接判广告, 只作为"值得花一次 AI 判定"的弱信号
+var contactPatterns = []string{
+	"私聊", "加我", "微信", "威信", "vx", "wx", "qq", "扣扣",
+	"联系我", "简介", "主页", "详聊", "телеграм", "dm我", "pm我",
+	"收款", "代收", "刷单", "兼职", "日入", "月入", "回收", "出售", "特价", "低价",
+}
+
+// pricePattern 数字紧跟金额单位, 例如 3K / 5000元 / 1.6万
+var pricePattern = regexp.MustCompile(`(?i)\d+\s*(k|w|元|块|万|千|刀|u|usdt)`)
+
+// HasWeakSignal 判断文本是否值得花一次 AI 判定。
+//
+// 这是成本闸门, 不是判定依据: 命中只代表"可疑到值得看一眼", 单独命中不构成拦截理由。
+// 阈值刻意放宽 —— 漏掉一次 AI 判定的代价, 远大于多花一次调用。
+func HasWeakSignal(text string) bool {
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
+
+	normalized := Normalize(text)
+	for _, pattern := range contactPatterns {
+		if strings.Contains(normalized, Normalize(pattern)) {
+			return true
+		}
+	}
+
+	if pricePattern.MatchString(text) {
+		return true
+	}
+	if len(ExtractLinks(text)) > 0 {
+		return true
+	}
+	// 有拆字迹象但没到判定阈值的, 也送 AI 看一眼
+	return countSuspiciousSeparators(text) > 0
+}
+
+// countSuspiciousSeparators 统计可疑分隔符段数, 供弱信号判断复用
+func countSuspiciousSeparators(text string) int {
+	runes := []rune(text)
+
+	count := 0
+	i := 0
+	for i < len(runes) {
+		if isContentRune(runes[i]) {
+			i++
+			continue
+		}
+
+		start := i
+		for i < len(runes) && !isContentRune(runes[i]) {
+			i++
+		}
+		if start == 0 || i >= len(runes) {
+			continue
+		}
+		if isSuspiciousSeparator(runes[start:i], runes[start-1], runes[i]) {
+			count++
+		}
+	}
+	return count
 }
 
 // repeatTracker 按用户记录最近发过的内容, 用于识别定时重复刷屏。

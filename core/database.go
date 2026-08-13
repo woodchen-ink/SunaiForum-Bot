@@ -93,6 +93,26 @@ func (d *Database) createTables() error {
 					keyword TEXT PRIMARY KEY,
 					rejected_at TIMESTAMP
 			)`,
+		`CREATE TABLE IF NOT EXISTS moderation_actions (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					user_id INTEGER NOT NULL,
+					chat_id INTEGER NOT NULL,
+					user_name TEXT,
+					message_text TEXT,
+					rule TEXT,
+					learned_words TEXT,
+					banned INTEGER NOT NULL DEFAULT 0,
+					undone INTEGER NOT NULL DEFAULT 0,
+					created_at TIMESTAMP
+			)`,
+		`CREATE TABLE IF NOT EXISTS user_stats (
+					user_id INTEGER NOT NULL,
+					chat_id INTEGER NOT NULL,
+					message_count INTEGER NOT NULL DEFAULT 0,
+					first_seen_at TIMESTAMP,
+					last_seen_at TIMESTAMP,
+					PRIMARY KEY (user_id, chat_id)
+			)`,
 		`CREATE TABLE IF NOT EXISTS user_strikes (
 					user_id INTEGER NOT NULL,
 					chat_id INTEGER NOT NULL,

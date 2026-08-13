@@ -110,18 +110,28 @@ func deleteKeyword(bot *tgbotapi.BotAPI, message *tgbotapi.Message, keyword stri
 	}
 	keyword = strings.TrimSpace(keyword)
 
-	removed, err := core.DB.RemoveKeyword(keyword)
+	removed, source, err := core.DB.RemoveKeyword(keyword)
 	if err != nil {
 		core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("删除关键词 '%s' 时发生错误: %v", keyword, err))
 		log.Printf("[Command] 删除关键词 '%s' 失败: %v", keyword, err)
 		return
 	}
 
-	if removed {
-		core.SendMessage(bot, message.Chat.ID, fmt.Sprintf("关键词 '%s' 已成功删除。", keyword))
+	if !removed {
+		suggestSimilarKeywords(bot, message, keyword)
 		return
 	}
-	suggestSimilarKeywords(bot, message, keyword)
+
+	// 管理员亲手删除 AI 加的词 = 否决, AI 不得再添加
+	if source == core.SourceAI {
+		if err := core.DB.RejectKeyword(keyword); err != nil {
+			log.Printf("[Command] 写入否决表失败: %v", err)
+		}
+		core.SendMessage(bot, message.Chat.ID,
+			fmt.Sprintf("关键词 '%s' 已删除，并已永久否决，AI 不会再次添加。", keyword))
+		return
+	}
+	core.SendMessage(bot, message.Chat.ID, fmt.Sprintf("关键词 '%s' 已成功删除。", keyword))
 }
 
 // suggestSimilarKeywords 删除未命中时列出相似关键词, 方便管理员确认实际存的是哪一条

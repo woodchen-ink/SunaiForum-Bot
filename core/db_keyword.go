@@ -11,7 +11,6 @@ package core
 //
 // is_link / is_auto_added 是"同一链接不能发两次"功能的遗留列, 已不再写入, 保留仅为排干历史数据。
 import (
-	"fmt"
 	"strings"
 	"time"
 )
@@ -56,30 +55,28 @@ func (d *Database) AddKeyword(keyword, source string) (bool, error) {
 	return rows > 0, err
 }
 
-// RemoveKeyword 删除关键词。删除的若是 AI 添加的词, 同时写入否决表阻止 AI 再加回来。
-func (d *Database) RemoveKeyword(keyword string) (bool, error) {
+// RemoveKeyword 删除关键词, 返回是否删掉了行以及该词原本的来源。
+//
+// 这里**不会**自动写否决表: 删除的语义取决于调用方 —— 管理员手动删除和撤销误判属于"否决",
+// 而定期整理清掉零命中词只是"这次没用上", 不该永久拉黑。由调用方按语义显式调用 RejectKeyword。
+func (d *Database) RemoveKeyword(keyword string) (bool, string, error) {
 	var source string
 	err := d.db.QueryRow("SELECT source FROM keywords WHERE keyword = ?", keyword).Scan(&source)
 	if err != nil && !isNoRows(err) {
-		return false, err
+		return false, "", err
 	}
 
 	result, err := d.db.Exec("DELETE FROM keywords WHERE keyword = ?", keyword)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	d.invalidateCache(cacheKeywords)
 
-	if rowsAffected > 0 && source == SourceAI {
-		if err := d.RejectKeyword(keyword); err != nil {
-			return true, fmt.Errorf("已删除关键词但写入否决表失败: %w", err)
-		}
-	}
-	return rowsAffected > 0, nil
+	return rowsAffected > 0, source, nil
 }
 
 // RemoveKeywordsContaining 批量删除包含指定子串的关键词, 返回被删掉的关键词列表

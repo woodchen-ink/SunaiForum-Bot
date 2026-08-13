@@ -27,6 +27,7 @@ const (
 	ruleKeyword     = "关键词"
 	ruleDisplayName = "昵称关键词"
 	ruleFlooding    = "重复刷屏"
+	ruleAI          = "AI 判定"
 )
 
 // Verdict 审核结论
@@ -92,12 +93,12 @@ func CheckAndFilter(bot *tgbotapi.BotAPI, message *tgbotapi.Message) bool {
 	text := MessageText(message)
 	repeatCount := countRepeat(message.From.ID, text)
 
-	verdict := Inspect(text, displayName(message.From), repeatCount)
+	verdict := Inspect(text, DisplayName(message.From), repeatCount)
 	if !verdict.Hit {
 		return false
 	}
 
-	enforce(bot, message, text, verdict)
+	enforce(bot, message, text, verdict, nil)
 	return true
 }
 
@@ -110,8 +111,14 @@ func countRepeat(userID int64, text string) int {
 	return repeats.record(userID, normalized)
 }
 
-// enforce 执行处置: 删消息 -> 记分 -> 达阈值封禁 -> 通知管理员
-func enforce(bot *tgbotapi.BotAPI, message *tgbotapi.Message, text string, verdict Verdict) {
+// EnforceExternalVerdict 落实由外部判定器 (当前是 AI 审核) 给出的结论。
+// learnedWords 是本次判定新增的 AI 关键词, 管理员点撤销时会连同它们一起回滚。
+func EnforceExternalVerdict(bot *tgbotapi.BotAPI, message *tgbotapi.Message, text, detail string, learnedWords []string) {
+	enforce(bot, message, text, Verdict{Hit: true, Rule: ruleAI, Detail: detail}, learnedWords)
+}
+
+// enforce 执行处置: 删消息 -> 记分 -> 达阈值封禁 -> 记录可撤销的处置 -> 通知管理员
+func enforce(bot *tgbotapi.BotAPI, message *tgbotapi.Message, text string, verdict Verdict, learnedWords []string) {
 	user := message.From
 	chatID := message.Chat.ID
 
@@ -149,25 +156,49 @@ func enforce(bot *tgbotapi.BotAPI, message *tgbotapi.Message, text string, verdi
 		}
 	}
 
-	notifyAdmin(bot, message, text, verdict, strikes, banned)
+	actionID, err := core.DB.RecordModerationAction(core.ModerationAction{
+		UserID:       user.ID,
+		ChatID:       chatID,
+		UserName:     DisplayName(user),
+		MessageText:  text,
+		Rule:         verdict.Rule,
+		LearnedWords: learnedWords,
+		Banned:       banned,
+	})
+	if err != nil {
+		log.Printf("[Moderation] 记录处置失败, 本次将无法一键撤销: %v", err)
+	}
+
+	notifyAdmin(bot, message, text, verdict, strikes, banned, learnedWords, actionID)
 }
 
-// notifyAdmin 把处置结果私聊推给管理员, 附上足够的信息用于复核误判
-func notifyAdmin(bot *tgbotapi.BotAPI, message *tgbotapi.Message, text string, verdict Verdict, strikes int, banned bool) {
+// notifyAdmin 把处置结果私聊推给管理员, 附撤销按钮供一键回滚误判
+func notifyAdmin(bot *tgbotapi.BotAPI, message *tgbotapi.Message, text string,
+	verdict Verdict, strikes int, banned bool, learnedWords []string, actionID int64) {
+
 	var b strings.Builder
 	b.WriteString("🛡 已撤回一条消息\n\n")
 	fmt.Fprintf(&b, "规则: %s", verdict.Rule)
 	if verdict.Detail != "" {
 		fmt.Fprintf(&b, " (%s)", verdict.Detail)
 	}
-	fmt.Fprintf(&b, "\n用户: %s (ID: %d)\n", displayName(message.From), message.From.ID)
+	fmt.Fprintf(&b, "\n用户: %s (ID: %d)\n", DisplayName(message.From), message.From.ID)
 	fmt.Fprintf(&b, "累计违规: %d 次\n", strikes)
 	if banned {
 		b.WriteString("处置: 已自动封禁并踢出\n")
 	}
+	if len(learnedWords) > 0 {
+		fmt.Fprintf(&b, "新增关键词: %s\n", strings.Join(learnedWords, "、"))
+	}
 	fmt.Fprintf(&b, "\n原文:\n%s", truncate(text, logTextLimit))
 
-	core.NotifyAdmin(bot, b.String())
+	msg := tgbotapi.NewMessage(core.AdminID, b.String())
+	if actionID > 0 {
+		msg.ReplyMarkup = undoKeyboard(actionID)
+	}
+	if _, err := bot.Send(msg); err != nil {
+		log.Printf("[Moderation] 通知管理员失败: %v", err)
+	}
 }
 
 // MessageText 取一条消息中需要审核的全部文本: 正文与图片/视频的说明文字
@@ -182,7 +213,7 @@ func MessageText(message *tgbotapi.Message) string {
 }
 
 // displayName 拼接发送者的昵称与用户名, 用于昵称关键词匹配和通知展示
-func displayName(user *tgbotapi.User) string {
+func DisplayName(user *tgbotapi.User) string {
 	parts := make([]string, 0, 3)
 	for _, s := range []string{user.FirstName, user.LastName, user.UserName} {
 		if s != "" {

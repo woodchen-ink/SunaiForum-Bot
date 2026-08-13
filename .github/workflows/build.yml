@@ -25,14 +25,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.23'  # 使用你项目需要的 Go 版本
+          go-version: '1.24'  # 使用你项目需要的 Go 版本
 
       - name: Build for amd64
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o main-amd64 .
   
-      - name: Build for arm64
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o main-arm64 .
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -62,7 +59,22 @@ jobs:
         with:
           context: .
           file: Dockerfile.multi
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      # 触发 Dokploy 自动部署; 完整 URL 走 secret 防止公网暴露后被任意触发
+      # 只在 main 分支触发: latest 标签仅由默认分支产出, tag 构建触发会让 Dokploy 拉到旧的 latest
+      # 未配置 secret 时 step 内自跳过, 不让 fork / 初次跑的人挂红
+      - name: Trigger Dokploy deploy webhook
+        if: github.ref == 'refs/heads/main'
+        env:
+          DOKPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_WEBHOOK_URL }}
+        run: |
+          if [ -z "${DOKPLOY_WEBHOOK_URL}" ]; then
+            echo "DOKPLOY_WEBHOOK_URL not set, skipping."
+            exit 0
+          fi
+          curl --fail --silent --show-error --retry 3 --retry-delay 5 \
+            -X POST "${DOKPLOY_WEBHOOK_URL}"

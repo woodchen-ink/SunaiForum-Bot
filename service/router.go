@@ -3,6 +3,7 @@ package service
 // 消息路由: 按来源 (管理员私聊 / 群聊) 把更新分发到对应处理器
 import (
 	"SunaiForum-Bot/core"
+	"SunaiForum-Bot/service/ai_review"
 	"SunaiForum-Bot/service/binance"
 	"SunaiForum-Bot/service/command"
 	"SunaiForum-Bot/service/group_member_management"
@@ -15,6 +16,14 @@ import (
 // handleUpdate 分流一条更新。
 // 编辑后的消息同样要过审核 —— 先发正常内容再编辑成广告是常见的规避手法。
 func handleUpdate(bot *tgbotapi.BotAPI, update tgbotapi.Update, rateLimiter *core.RateLimiter) {
+	// 管理员在处置通知上点"恢复"按钮
+	if query := update.CallbackQuery; query != nil {
+		if moderation.IsUndoCallback(query.Data) {
+			moderation.HandleUndoCallback(bot, query)
+		}
+		return
+	}
+
 	if edited := update.EditedMessage; edited != nil {
 		if edited.From != nil && edited.Chat.Type != "private" && !core.IsAdmin(edited.From.ID) {
 			moderation.CheckAndFilter(bot, edited)
@@ -70,9 +79,13 @@ func processMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, rateLimiter
 		return
 	}
 
-	// 管理员不受内容过滤限制
-	if !core.IsAdmin(message.From.ID) && moderation.CheckAndFilter(bot, message) {
-		return
+	if !core.IsAdmin(message.From.ID) {
+		// 确定性规则先跑, 命中即拦截, 不产生 AI 调用
+		if moderation.CheckAndFilter(bot, message) {
+			return
+		}
+		// 未命中的交给 AI 复核; 内部自行判断是否值得调用, 且异步执行不阻塞本函数
+		ai_review.MaybeReview(bot, message)
 	}
 
 	if !rateLimiter.Allow() {
