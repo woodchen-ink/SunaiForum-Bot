@@ -153,3 +153,32 @@ func TestBackupBeforeMigrateSkipsFreshDatabase(t *testing.T) {
 		t.Error("库文件不存在时不该创建快照目录")
 	}
 }
+
+// TestCleanupInvalidKeywords 空关键词行要被清掉, 正常关键词不能受影响
+func TestCleanupInvalidKeywords(t *testing.T) {
+	db, err := NewDatabaseAt(filepath.Join(t.TempDir(), "invalid.db"))
+	if err != nil {
+		t.Fatalf("创建库失败: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.AddKeyword("水果机", SourceManual); err != nil {
+		t.Fatalf("写入关键词失败: %v", err)
+	}
+	// 直接造出事故形态的行: NULL 与空白
+	db.db.Exec("INSERT INTO keywords (keyword, source, hit_count) VALUES (NULL, 'manual', 0)")
+	db.db.Exec("INSERT INTO keywords (keyword, source, hit_count) VALUES ('   ', 'manual', 0)")
+
+	removed, err := db.CleanupInvalidKeywords()
+	if err != nil {
+		t.Fatalf("清理失败: %v", err)
+	}
+	if removed != 2 {
+		t.Errorf("清理条数 = %d, 期望 2", removed)
+	}
+
+	keywords, _ := db.GetActiveKeywords()
+	if len(keywords) != 1 || keywords[0] != "水果机" {
+		t.Errorf("正常关键词被误删或残留未清: %v", keywords)
+	}
+}

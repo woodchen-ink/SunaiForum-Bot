@@ -81,6 +81,13 @@ func NewDatabase() (*Database, error) {
 	}
 	database.verifyMigration(before, snapshot)
 
+	// 清掉历史事故留下的空关键词行, 它们匹配不到任何东西, 只会污染 /list
+	if removed, err := database.CleanupInvalidKeywords(); err != nil {
+		log.Printf("[Database] 清理空关键词失败: %v", err)
+	} else if removed > 0 {
+		log.Printf("[Database] 已清理 %d 条内容为空的关键词行", removed)
+	}
+
 	return database, nil
 }
 

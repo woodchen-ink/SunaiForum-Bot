@@ -163,3 +163,19 @@ func (d *Database) CleanupLegacyAutoLinks() (int64, error) {
 	}
 	return result.RowsAffected, nil
 }
+
+// CleanupInvalidKeywords 删除内容为空的关键词行并返回删除条数。
+//
+// 这类行是 2026-08-13 迁移事故的残留: 整表重建把 keyword 列清空, 留下一批 NULL 行。
+// 它们永远匹配不到任何消息 (matchKeyword 会跳过空词), 但会让 /list 显示成一串空条目。
+// 放在启动流程里自愈, 避免手工去生产库上删数据。
+func (d *Database) CleanupInvalidKeywords() (int64, error) {
+	result := d.db.Where("keyword IS NULL OR TRIM(keyword) = ''").Delete(&Keyword{})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	if result.RowsAffected > 0 {
+		d.invalidateCache(cacheKeywords)
+	}
+	return result.RowsAffected, nil
+}
