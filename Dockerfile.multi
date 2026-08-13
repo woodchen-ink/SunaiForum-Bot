@@ -1,21 +1,13 @@
 FROM alpine:latest
 
-# 安装必要的包
+# tzdata 必须装: 容器默认时区是 UTC, 缺了它 time.LoadLocation("Asia/Singapore") 会失败
 RUN apk --no-cache add ca-certificates tzdata
 
 WORKDIR /root/
 
-COPY main-amd64 main-arm64 ./
-
-ARG TARGETARCH
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        mv main-amd64 main && rm main-arm64; \
-    elif [ "$TARGETARCH" = "arm64" ]; then \
-        mv main-arm64 main && rm main-amd64; \
-    fi
-
-
+# 只构建 amd64: build.yml 的 platforms 已收敛为 linux/amd64。
+# 若将来恢复 arm64 构建, 这里要改回按 TARGETARCH 分支拷贝对应产物。
+COPY main-amd64 ./main
 RUN chmod +x main
-
 
 CMD ["./main"]
