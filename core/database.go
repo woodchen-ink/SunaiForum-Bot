@@ -1,41 +1,61 @@
 package core
 
-//数据库处理
+// 数据库连接、建表与列表缓存基础设施; 各张表的具体读写拆在 db_*.go
 import (
 	"database/sql"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
 
-type Database struct {
-	db                     *sql.DB
-	keywordsCache          []string
-	whitelistCache         []string
-	promptRepliesCache     map[string]string
-	keywordsCacheTime      time.Time
-	whitelistCacheTime     time.Time
-	promptRepliesCacheTime time.Time
-	mu                     sync.Mutex
+// cacheTTL 列表缓存存活时间, 过期后回源查库; 写操作会主动失效对应缓存, 因此改动即时生效
+const cacheTTL = 5 * time.Minute
+
+// cacheKind 标识一份列表缓存, 用常量代替字符串避免拼写错误
+type cacheKind int
+
+const (
+	cacheKeywords cacheKind = iota
+	cacheWhitelist
+)
+
+// cachedList 带加载时间的字符串列表缓存, 零值表示尚未加载
+type cachedList struct {
+	items    []string
+	loadedAt time.Time
 }
 
+// expired 判断缓存未加载或已超过 TTL
+func (c *cachedList) expired() bool {
+	return c.items == nil || time.Since(c.loadedAt) > cacheTTL
+}
+
+type Database struct {
+	db *sql.DB
+
+	// mu 保护下面所有缓存字段
+	mu             sync.Mutex
+	manualKeywords cachedList // 手动维护的过滤关键词, 每条群消息都要读
+	whitelist      cachedList // 白名单域名
+}
+
+// NewDatabase 打开 SQLite 连接并确保所有表存在
 func NewDatabase() (*Database, error) {
-	os.MkdirAll(filepath.Dir(DB_FILE), os.ModePerm)
-	db, err := sql.Open("sqlite", DB_FILE)
+	if err := os.MkdirAll(filepath.Dir(DBFile), os.ModePerm); err != nil {
+		return nil, fmt.Errorf("创建数据目录失败: %w", err)
+	}
+
+	db, err := sql.Open("sqlite", DBFile)
 	if err != nil {
 		return nil, err
 	}
 
-	database := &Database{
-		db: db,
-	}
-
+	database := &Database{db: db}
 	if err := database.createTables(); err != nil {
 		return nil, err
 	}
@@ -43,6 +63,7 @@ func NewDatabase() (*Database, error) {
 	return database, nil
 }
 
+// createTables 幂等建表, 每次启动都会执行
 func (d *Database) createTables() error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS keywords (
@@ -70,17 +91,17 @@ func (d *Database) createTables() error {
 	}
 
 	for _, query := range queries {
-		_, err := d.db.Exec(query)
-		if err != nil {
-			return fmt.Errorf("执行查询失败 '%s': %v", query, err)
+		if _, err := d.db.Exec(query); err != nil {
+			return fmt.Errorf("执行建表语句失败 '%s': %w", query, err)
 		}
 	}
 
-	log.Println("所有必要的表都已创建")
+	log.Println("[Database] 所有必要的表都已创建")
 	return nil
 }
 
-func (d *Database) executeQuery(query string, args ...interface{}) ([]string, error) {
+// executeQuery 执行单列查询并收集为字符串切片
+func (d *Database) executeQuery(query string, args ...any) ([]string, error) {
 	rows, err := d.db.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -96,328 +117,66 @@ func (d *Database) executeQuery(query string, args ...interface{}) ([]string, er
 		results = append(results, result)
 	}
 
-	return results, nil
+	return results, rows.Err()
 }
 
-func (d *Database) AddKeyword(keyword string, isLink bool, isAutoAdded bool) error {
-	_, err := d.db.Exec("INSERT OR IGNORE INTO keywords (keyword, is_link, is_auto_added, added_at) VALUES (?, ?, ?, ?)",
-		keyword, isLink, isAutoAdded, time.Now())
-	if err != nil {
-		return err
-	}
-	d.invalidateCache("keywords")
-	return nil
-}
-
-func (d *Database) RemoveKeyword(keyword string) (bool, error) {
-	result, err := d.db.Exec("DELETE FROM keywords WHERE keyword = ?", keyword)
-	if err != nil {
-		return false, err
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	d.invalidateCache("keywords")
-	return rowsAffected > 0, nil
-}
-
-func (d *Database) CleanupExpiredLinks() (int64, error) {
-	twoMonthsAgo := time.Now().AddDate(0, -2, 0)
-	result, err := d.db.Exec("DELETE FROM keywords WHERE is_link = TRUE AND is_auto_added = TRUE AND added_at < ?", twoMonthsAgo)
-	if err != nil {
-		return 0, err
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return 0, err
-	}
-
-	d.invalidateCache("keywords")
-	return rowsAffected, nil
-}
-
-func (d *Database) GetAllKeywords() ([]string, error) {
+// queryCached 读取带 TTL 的列表缓存, 未命中时回源查库。
+// 返回的是副本, 调用方修改不会污染缓存。
+func (d *Database) queryCached(kind cacheKind, query string, args ...any) ([]string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if d.keywordsCache == nil || time.Since(d.keywordsCacheTime) > 5*time.Minute {
-		keywords, err := d.executeQuery("SELECT keyword FROM keywords")
+	cache := d.cacheOf(kind)
+	if cache.expired() {
+		items, err := d.executeQuery(query, args...)
 		if err != nil {
 			return nil, err
 		}
-		d.keywordsCache = keywords
-		d.keywordsCacheTime = time.Now()
+		cache.items = items
+		cache.loadedAt = time.Now()
 	}
 
-	return d.keywordsCache, nil
-}
-func (d *Database) GetAllManualKeywords() ([]string, error) {
-	return d.executeQuery("SELECT keyword FROM keywords WHERE is_auto_added = ?", false)
-}
-
-func (d *Database) GetAllAutoAddedLinks() ([]string, error) {
-	return d.executeQuery("SELECT keyword FROM keywords WHERE is_link = ? AND is_auto_added = ?", true, true)
-}
-
-func (d *Database) RemoveKeywordsContaining(substring string) ([]string, error) {
-	// 首先获取要删除的关键词列表
-	rows, err := d.db.Query("SELECT keyword FROM keywords WHERE keyword LIKE ?", "%"+substring+"%")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var removedKeywords []string
-	for rows.Next() {
-		var keyword string
-		if err := rows.Scan(&keyword); err != nil {
-			return nil, err
-		}
-		removedKeywords = append(removedKeywords, keyword)
-	}
-
-	// 执行删除操作
-	_, err = d.db.Exec("DELETE FROM keywords WHERE keyword LIKE ?", "%"+substring+"%")
-	if err != nil {
-		return nil, err
-	}
-
-	d.invalidateCache("keywords")
-	return removedKeywords, nil
-}
-
-func (d *Database) AddWhitelist(domain string) error {
-	_, err := d.db.Exec("INSERT OR IGNORE INTO whitelist (domain) VALUES (?)", domain)
-	if err != nil {
-		return err
-	}
-	d.invalidateCache("whitelist")
-	return nil
-}
-
-func (d *Database) RemoveWhitelist(domain string) error {
-	_, err := d.db.Exec("DELETE FROM whitelist WHERE domain = ?", domain)
-	if err != nil {
-		return err
-	}
-	d.invalidateCache("whitelist")
-	return nil
-}
-
-func (d *Database) GetAllWhitelist() ([]string, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	if d.whitelistCache == nil || time.Since(d.whitelistCacheTime) > 5*time.Minute {
-		whitelist, err := d.executeQuery("SELECT domain FROM whitelist")
-		if err != nil {
-			return nil, err
-		}
-		d.whitelistCache = whitelist
-		d.whitelistCacheTime = time.Now()
-	}
-
-	return d.whitelistCache, nil
-}
-
-func (d *Database) SearchKeywords(pattern string) ([]string, error) {
-	return d.executeQuery("SELECT keyword FROM keywords WHERE keyword LIKE ?", "%"+pattern+"%")
-}
-
-func (d *Database) KeywordExists(keyword string) (bool, error) {
-	var count int
-	err := d.db.QueryRow("SELECT COUNT(*) FROM keywords WHERE keyword = ?", keyword).Scan(&count)
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
-}
-
-func (d *Database) WhitelistExists(domain string) (bool, error) {
-	var count int
-	err := d.db.QueryRow("SELECT COUNT(*) FROM whitelist WHERE domain = ?", domain).Scan(&count)
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
-}
-
-func (d *Database) AddPromptReply(prompt, reply string) error {
-	tx, err := d.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	_, err = tx.Exec("INSERT OR REPLACE INTO prompt_replies (prompt, reply) VALUES (?, ?)", strings.ToLower(prompt), reply)
-	if err != nil {
-		return err
-	}
-
-	if err = tx.Commit(); err != nil {
-		return err
-	}
-
-	d.invalidateCache("promptReplies")
-	return nil
-}
-
-func (d *Database) DeletePromptReply(prompt string) error {
-	tx, err := d.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	_, err = tx.Exec("DELETE FROM prompt_replies WHERE prompt = ?", strings.ToLower(prompt))
-	if err != nil {
-		return err
-	}
-
-	if err = tx.Commit(); err != nil {
-		return err
-	}
-
-	d.invalidateCache("promptReplies")
-	return nil
-}
-
-func (d *Database) fetchAllPromptReplies() (map[string]string, error) {
-	rows, err := d.db.Query("SELECT prompt, reply FROM prompt_replies")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	promptReplies := make(map[string]string)
-	for rows.Next() {
-		var prompt, reply string
-		if err := rows.Scan(&prompt, &reply); err != nil {
-			return nil, err
-		}
-		promptReplies[prompt] = reply
-	}
-	return promptReplies, nil
-}
-
-func (d *Database) GetAllPromptReplies() (map[string]string, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	// 强制刷新缓存
-	promptReplies, err := d.fetchAllPromptReplies()
-	if err != nil {
-		return nil, err
-	}
-	d.promptRepliesCache = promptReplies
-	d.promptRepliesCacheTime = time.Now()
-
-	// 返回一个副本
-	result := make(map[string]string, len(d.promptRepliesCache))
-	for k, v := range d.promptRepliesCache {
-		result[k] = v
-	}
+	result := make([]string, len(cache.items))
+	copy(result, cache.items)
 	return result, nil
 }
 
-func (d *Database) invalidateCache(cacheType string) {
+// invalidateCache 清空指定列表缓存, 由写操作在提交后调用
+func (d *Database) invalidateCache(kind cacheKind) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	switch cacheType {
-	case "keywords":
-		d.keywordsCache = nil
-		d.keywordsCacheTime = time.Time{}
-	case "whitelist":
-		d.whitelistCache = nil
-		d.whitelistCacheTime = time.Time{}
-	case "promptReplies":
-		d.promptRepliesCache = nil
-		d.promptRepliesCacheTime = time.Time{}
-	default:
-		// 清除所有缓存
-		d.keywordsCache = nil
-		d.whitelistCache = nil
-		d.promptRepliesCache = nil
-		d.keywordsCacheTime = time.Time{}
-		d.whitelistCacheTime = time.Time{}
-		d.promptRepliesCacheTime = time.Time{}
+	*d.cacheOf(kind) = cachedList{}
+}
+
+// cacheOf 取指定种类的缓存指针; 调用方必须已持有 d.mu
+func (d *Database) cacheOf(kind cacheKind) *cachedList {
+	if kind == cacheWhitelist {
+		return &d.whitelist
 	}
+	return &d.manualKeywords
 }
 
-func (d *Database) Close() error {
-	return d.db.Close()
-}
-
-func (d *Database) EnsureTablesExist() error {
-	tables := []string{"keywords", "whitelist", "prompt_replies", "config"}
-	for _, table := range tables {
-		var name string
-		err := d.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				// 表不存在，创建所有表
-				if err := d.createTables(); err != nil {
-					return fmt.Errorf("创建表失败: %v", err)
-				}
-				log.Printf("创建了缺失的表: %s", table)
-				return nil // 所有表都已创建，无需继续检查
-			}
-			return fmt.Errorf("检查表 %s 是否存在时出错: %v", table, err)
-		}
-		log.Printf("表 %s 已存在", table)
-	}
-	return nil
-}
-
+// CountRecords 统计指定表的记录数; 表名走白名单校验, 防止拼接注入
 func (d *Database) CountRecords(tableName string) (int, error) {
-	// 验证表名白名单，防止SQL注入
 	allowedTables := map[string]bool{
-		"keywords":      true,
-		"whitelist":     true,
+		"keywords":       true,
+		"whitelist":      true,
 		"prompt_replies": true,
-		"config":        true,
+		"config":         true,
 	}
-	
+
 	if !allowedTables[tableName] {
 		return 0, fmt.Errorf("invalid table name: %s", tableName)
 	}
-	
+
 	var count int
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
-	err := d.db.QueryRow(query).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("failed to count records in table %s: %v", tableName, err)
+	if err := d.db.QueryRow(query).Scan(&count); err != nil {
+		return 0, fmt.Errorf("统计表 %s 记录数失败: %w", tableName, err)
 	}
 	return count, nil
 }
 
-// 配置相关函数
-func (d *Database) SetConfig(key, value string) error {
-	_, err := d.db.Exec("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", key, value)
-	if err != nil {
-		return fmt.Errorf("failed to set config %s: %v", key, err)
-	}
-	return nil
-}
-
-func (d *Database) GetConfig(key string) (string, error) {
-	var value string
-	err := d.db.QueryRow("SELECT value FROM config WHERE key = ?", key).Scan(&value)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return "", nil // 配置不存在返回空字符串
-		}
-		return "", fmt.Errorf("failed to get config %s: %v", key, err)
-	}
-	return value, nil
-}
-
-func (d *Database) DeleteConfig(key string) error {
-	_, err := d.db.Exec("DELETE FROM config WHERE key = ?", key)
-	if err != nil {
-		return fmt.Errorf("failed to delete config %s: %v", key, err)
-	}
-	return nil
+func (d *Database) Close() error {
+	return d.db.Close()
 }

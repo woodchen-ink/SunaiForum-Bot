@@ -1,11 +1,12 @@
 package prompt_reply
 
+// 关键词触发的自动回复。
+// 提示词全量常驻内存: 数据量小且每条群消息都要匹配, 启动时加载一次, 增删时同步更新内存与库。
 import (
 	"fmt"
 	"log"
 	"strings"
 	"sync"
-	"time"
 
 	"SunaiForum-Bot/core"
 
@@ -13,166 +14,174 @@ import (
 )
 
 type PromptReplyManager struct {
-	promptReplies map[string]string
 	mu            sync.RWMutex
+	promptReplies map[string]string // 提示词(小写) -> 回复
 }
 
-var Manager *PromptReplyManager
-
-func init() {
-	Manager = &PromptReplyManager{
-		promptReplies: make(map[string]string),
-	}
+var Manager = &PromptReplyManager{
+	promptReplies: make(map[string]string),
 }
 
+// LoadDataFromDatabase 全量重载内存映射, 启动时调用
 func (prm *PromptReplyManager) LoadDataFromDatabase() error {
-	prm.mu.Lock()
-	defer prm.mu.Unlock()
-
 	promptReplies, err := core.DB.GetAllPromptReplies()
 	if err != nil {
 		return err
 	}
 
+	prm.mu.Lock()
 	prm.promptReplies = promptReplies
+	prm.mu.Unlock()
 
-	log.Printf("[PromptReply] 已从数据库加载 %d 条提示回复", len(prm.promptReplies))
+	log.Printf("[PromptReply] 已从数据库加载 %d 条提示回复", len(promptReplies))
 	return nil
 }
+
+// snapshot 返回内存映射的副本, 供只读遍历使用
+func (prm *PromptReplyManager) snapshot() map[string]string {
+	prm.mu.RLock()
+	defer prm.mu.RUnlock()
+
+	result := make(map[string]string, len(prm.promptReplies))
+	for k, v := range prm.promptReplies {
+		result[k] = v
+	}
+	return result
+}
+
+// SetPromptReply 新增或覆盖一条提示词回复, 先落库再更新内存, 保证重启后一致
 func SetPromptReply(prompt, reply string) error {
-	// 输入验证
 	if err := core.ValidatePrompt(prompt, reply); err != nil {
-		return fmt.Errorf("输入验证失败: %v", err)
+		return fmt.Errorf("输入验证失败: %w", err)
 	}
 
-	prompt = strings.TrimSpace(prompt)
+	prompt = strings.ToLower(strings.TrimSpace(prompt))
 	reply = strings.TrimSpace(reply)
 
-	err := core.DB.AddPromptReply(prompt, reply)
-	if err != nil {
-		log.Printf("[PromptReply] %s 设置提示回复失败: %v", time.Now().Format("2006/01/02 15:04:05"), err)
+	if err := core.DB.AddPromptReply(prompt, reply); err != nil {
+		log.Printf("[PromptReply] 设置提示回复失败: %v", err)
 		return err
 	}
 
 	Manager.mu.Lock()
 	Manager.promptReplies[prompt] = reply
+	count := len(Manager.promptReplies)
 	Manager.mu.Unlock()
 
-	log.Printf("[PromptReply] %s 设置提示回复成功。当前提示回复数量: %d", time.Now().Format("2006/01/02 15:04:05"), len(Manager.promptReplies))
+	log.Printf("[PromptReply] 设置提示回复成功, 当前数量: %d", count)
 	return nil
 }
 
+// DeletePromptReply 删除一条提示词回复, 先落库再更新内存
 func DeletePromptReply(prompt string) error {
-	// 基本输入验证
+	prompt = strings.ToLower(strings.TrimSpace(prompt))
 	if prompt == "" {
 		return fmt.Errorf("提示词不能为空")
 	}
 
-	prompt = strings.TrimSpace(prompt)
-	if len(prompt) == 0 {
-		return fmt.Errorf("提示词不能为空白字符")
-	}
-
-	err := core.DB.DeletePromptReply(prompt)
-	if err != nil {
-		log.Printf("[PromptReply] %s 删除提示回复失败: %v", time.Now().Format("2006/01/02 15:04:05"), err)
+	if err := core.DB.DeletePromptReply(prompt); err != nil {
+		log.Printf("[PromptReply] 删除提示回复失败: %v", err)
 		return err
 	}
 
 	Manager.mu.Lock()
 	delete(Manager.promptReplies, prompt)
+	count := len(Manager.promptReplies)
 	Manager.mu.Unlock()
 
-	log.Printf("[PromptReply] %s 删除提示回复成功。当前提示回复数量: %d", time.Now().Format("2006/01/02 15:04:05"), len(Manager.promptReplies))
+	log.Printf("[PromptReply] 删除提示回复成功, 当前数量: %d", count)
 	return nil
 }
 
+// GetPromptReply 在消息中查找命中的提示词。
+// 多个提示词同时命中时取最长的那个, 保证结果稳定且更具体的规则优先。
 func GetPromptReply(message string) (string, bool) {
-	promptReplies, err := core.DB.GetAllPromptReplies()
-	if err != nil {
-		log.Printf("[PromptReply] Error getting prompt replies: %v", err)
-		return "", false
-	}
-
 	message = strings.ToLower(message)
-	for prompt, reply := range promptReplies {
-		if strings.Contains(message, strings.ToLower(prompt)) {
-			return reply, true
+
+	var bestPrompt, bestReply string
+	Manager.mu.RLock()
+	for prompt, reply := range Manager.promptReplies {
+		if len(prompt) > len(bestPrompt) && strings.Contains(message, prompt) {
+			bestPrompt, bestReply = prompt, reply
 		}
 	}
-	return "", false
+	Manager.mu.RUnlock()
+
+	return bestReply, bestPrompt != ""
 }
 
+// ListPromptReplies 渲染全部提示词回复供管理员查看
 func ListPromptReplies() string {
-	replies, err := core.DB.GetAllPromptReplies()
-	if err != nil {
-		log.Printf("[PromptReply] 获取及时回复时出错: %v", err)
-		return "检索提示回复时出错"
-	}
-
+	replies := Manager.snapshot()
 	if len(replies) == 0 {
 		return "没有找到提示回复"
 	}
 
 	var result strings.Builder
 	for prompt, reply := range replies {
-		result.WriteString(fmt.Sprintf("Prompt: %s\nReply: %s\n\n", prompt, reply))
+		fmt.Fprintf(&result, "Prompt: %s\nReply: %s\n\n", prompt, reply)
 	}
-
 	return result.String()
 }
 
+// HandlePromptCommand 处理 /prompt set|delete|list 子命令
 func HandlePromptCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	if !core.IsAdmin(message.From.ID) {
-		bot.Send(tgbotapi.NewMessage(message.Chat.ID, "只有管理员才能使用此命令。"))
+		core.SendMessage(bot, message.Chat.ID, "只有管理员才能使用此命令。")
 		return
 	}
 
+	const usage = "使用方法:\n/prompt set <提示词> <回复>\n/prompt delete <提示词>\n/prompt list"
+
 	args := strings.SplitN(message.Text, " ", 3)
 	if len(args) < 2 {
-		bot.Send(tgbotapi.NewMessage(message.Chat.ID, "使用方法: /prompt set <提示词> <回复>\n/prompt delete <提示词>\n/prompt list"))
+		core.SendMessage(bot, message.Chat.ID, usage)
 		return
 	}
 
 	switch args[1] {
 	case "set":
 		if len(args) < 3 {
-			bot.Send(tgbotapi.NewMessage(message.Chat.ID, "使用方法: /prompt set <提示词> <回复>"))
+			core.SendMessage(bot, message.Chat.ID, "使用方法: /prompt set <提示词> <回复>")
 			return
 		}
 		promptAndReply := strings.SplitN(args[2], " ", 2)
 		if len(promptAndReply) < 2 {
-			bot.Send(tgbotapi.NewMessage(message.Chat.ID, "请同时提供提示词和回复。"))
+			core.SendMessage(bot, message.Chat.ID, "请同时提供提示词和回复。")
 			return
 		}
-		err := SetPromptReply(promptAndReply[0], promptAndReply[1])
-		if err != nil {
-			bot.Send(tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("设置提示词失败：%v", err)))
+		if err := SetPromptReply(promptAndReply[0], promptAndReply[1]); err != nil {
+			core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("设置提示词失败：%v", err))
 			return
 		}
-		bot.Send(tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("已设置提示词 '%s' 的回复。", promptAndReply[0])))
+		core.SendMessage(bot, message.Chat.ID, fmt.Sprintf("已设置提示词 '%s' 的回复。", promptAndReply[0]))
 	case "delete":
 		if len(args) < 3 {
-			bot.Send(tgbotapi.NewMessage(message.Chat.ID, "使用方法: /prompt delete <提示词>"))
+			core.SendMessage(bot, message.Chat.ID, "使用方法: /prompt delete <提示词>")
 			return
 		}
-		err := DeletePromptReply(args[2])
-		if err != nil {
-			bot.Send(tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("删除提示词失败：%v", err)))
+		if err := DeletePromptReply(args[2]); err != nil {
+			core.SendErrorMessage(bot, message.Chat.ID, fmt.Sprintf("删除提示词失败：%v", err))
 			return
 		}
-		bot.Send(tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("已删除提示词 '%s' 的回复。", args[2])))
+		core.SendMessage(bot, message.Chat.ID, fmt.Sprintf("已删除提示词 '%s' 的回复。", args[2]))
 	case "list":
-		bot.Send(tgbotapi.NewMessage(message.Chat.ID, ListPromptReplies()))
+		core.SendMessage(bot, message.Chat.ID, ListPromptReplies())
 	default:
-		bot.Send(tgbotapi.NewMessage(message.Chat.ID, "未知的子命令。使用方法: /prompt set|delete|list"))
+		core.SendMessage(bot, message.Chat.ID, usage)
 	}
 }
 
+// CheckAndReplyPrompt 群消息命中提示词时以引用方式回复
 func CheckAndReplyPrompt(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	if reply, found := GetPromptReply(message.Text); found {
-		replyMsg := tgbotapi.NewMessage(message.Chat.ID, reply)
-		replyMsg.ReplyToMessageID = message.MessageID
-		bot.Send(replyMsg)
+	reply, found := GetPromptReply(message.Text)
+	if !found {
+		return
+	}
+
+	replyMsg := tgbotapi.NewMessage(message.Chat.ID, reply)
+	replyMsg.ReplyToMessageID = message.MessageID
+	if _, err := bot.Send(replyMsg); err != nil {
+		log.Printf("[PromptReply] 发送自动回复失败: %v", err)
 	}
 }

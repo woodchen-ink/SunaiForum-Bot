@@ -16,12 +16,11 @@ import (
 )
 
 var (
-	botToken    string
-	chatID      int64
-	symbols     []string
-	bot         *tgbotapi.BotAPI
-	lastMsgID   int
-	lastMsgMu   sync.Mutex // 保护lastMsgID的并发访问
+	chatID    int64
+	symbols   []string
+	bot       *tgbotapi.BotAPI
+	lastMsgID int
+	lastMsgMu sync.Mutex // 保护lastMsgID的并发访问
 )
 
 const lastMsgIDConfigKey = "binance_last_msg_id"
@@ -136,11 +135,6 @@ func sendPriceUpdate() {
 	message := fmt.Sprintf("市场更新 - %s (SGT)\n\n", now.Format("2006-01-02 15:04:05"))
 
 	for _, symbol := range symbols {
-		// 跳过空的交易对
-		if symbol == "" {
-			continue
-		}
-
 		info, err := getTickerInfo(symbol)
 		if err != nil {
 			log.Printf("[Binance] 获取交易对 %s 的价格信息时出错: %v", symbol, err)
@@ -183,7 +177,6 @@ func RunBinance() {
 	log.Println("[Binance]", "启动币安服务...")
 
 	// 初始化必要的变量
-	botToken = core.BOT_TOKEN
 	bot = core.Bot
 	chatID = core.ChatID
 	symbols = core.Symbols
@@ -201,7 +194,7 @@ func RunBinance() {
 	log.Println("[Binance]", "启动每小时刷新交易对缓存...")
 
 	// 检查是否配置了交易对
-	if len(symbols) == 0 || (len(symbols) == 1 && symbols[0] == "") {
+	if len(symbols) == 0 {
 		log.Println("[Binance]", "未配置交易对（SYMBOLS环境变量为空），仅启用查询功能，不主动推送价格")
 		// 不启动定时推送，但保持服务运行以支持查询功能
 		select {} // 阻塞主goroutine，保持服务运行

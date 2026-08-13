@@ -1,5 +1,6 @@
 package group_member_management
 
+// 群成员管理: 管理员回复某条消息发 /ban 即可删消息并永久封禁其作者
 import (
 	"fmt"
 	"log"
@@ -10,62 +11,45 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+// noticeTTL 机器人提示与管理员指令的自毁时间, 避免群里堆积管理痕迹
+const noticeTTL = 3 * time.Minute
+
+// HandleBanCommand 处理管理员对某条消息的 /ban 回复:
+// 删除被回复的原消息、永久踢出其作者, 并在群内留一条限时提示
 func HandleBanCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	// 检查是否是管理员
-	if !core.IsAdmin(message.From.ID) {
+	if message.From == nil || !core.IsAdmin(message.From.ID) {
 		return
 	}
-
-	// 检查是否是回复消息
-	if message.ReplyToMessage == nil {
+	// 被回复的消息可能来自匿名管理员或频道身份, 此时拿不到可封禁的用户
+	if message.ReplyToMessage == nil || message.ReplyToMessage.From == nil {
 		return
 	}
 
 	chatID := message.Chat.ID
 	userToBan := message.ReplyToMessage.From
 
-	// 立即删除被回复的原消息
-	deleteConfig := tgbotapi.NewDeleteMessage(chatID, message.ReplyToMessage.MessageID)
-	_, err := bot.Request(deleteConfig)
-	if err != nil {
-		log.Printf("[GroupMemberManagement] 删除原消息时出错: %v", err)
-	}
+	core.DeleteMessages(bot, chatID, message.ReplyToMessage.MessageID)
 
-	// 踢出用户
-	kickChatMemberConfig := tgbotapi.KickChatMemberConfig{
+	kickConfig := tgbotapi.KickChatMemberConfig{
 		ChatMemberConfig: tgbotapi.ChatMemberConfig{
 			ChatID: chatID,
 			UserID: userToBan.ID,
 		},
-		UntilDate: 0, // 0 means ban forever
+		UntilDate: 0, // 0 表示永久封禁
 	}
+	if _, err := bot.Request(kickConfig); err != nil {
+		log.Printf("[GroupMemberManagement] 封禁用户 %d 失败: %v", userToBan.ID, err)
+		return
+	}
+	log.Printf("[GroupMemberManagement] 已封禁用户 %s (ID: %d)", userToBan.UserName, userToBan.ID)
 
-	_, err = bot.Request(kickChatMemberConfig)
+	notice := tgbotapi.NewMessage(chatID, fmt.Sprintf("用户 %s 已被封禁并踢出群组。", userToBan.UserName))
+	sentMsg, err := bot.Send(notice)
 	if err != nil {
-		log.Printf("[GroupMemberManagement] 禁止用户时出错: %v", err)
+		log.Printf("[GroupMemberManagement] 发送封禁提示失败: %v", err)
 		return
 	}
 
-	// 发送提示消息
-	banMessage := fmt.Sprintf("用户 %s 已被封禁并踢出群组。", userToBan.UserName)
-	msg := tgbotapi.NewMessage(chatID, banMessage)
-	sentMsg, err := bot.Send(msg)
-	if err != nil {
-		log.Printf("[GroupMemberManagement] 发送禁止消息时出错: %v", err)
-		return
-	}
-
-	// 3分钟后删除机器人的消息和管理员的指令消息
-	go deleteMessagesAfterDelay(bot, chatID, []int{sentMsg.MessageID, message.MessageID}, 3*time.Minute)
-}
-
-func deleteMessagesAfterDelay(bot *tgbotapi.BotAPI, chatID int64, messageIDs []int, delay time.Duration) {
-	time.Sleep(delay)
-	for _, msgID := range messageIDs {
-		deleteConfig := tgbotapi.NewDeleteMessage(chatID, msgID)
-		_, err := bot.Request(deleteConfig)
-		if err != nil {
-			log.Printf("[GroupMemberManagement] 删除消息 %d 时出错: %v", msgID, err)
-		}
-	}
+	core.DeleteMessageAfterDelay(bot, chatID, sentMsg.MessageID, noticeTTL)
+	core.DeleteMessageAfterDelay(bot, chatID, message.MessageID, noticeTTL)
 }

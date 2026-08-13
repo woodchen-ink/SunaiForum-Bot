@@ -1,5 +1,6 @@
 package service
 
+// 后台定时任务
 import (
 	"log"
 	"time"
@@ -7,31 +8,34 @@ import (
 	"SunaiForum-Bot/core"
 )
 
-func StartScheduledTasks() {
-	log.Printf("启动定时任务")
+// cleanupInterval 数据清理任务的执行间隔
+const cleanupInterval = 24 * time.Hour
 
+// StartScheduledTasks 拉起全部后台定时任务, 立即返回
+func StartScheduledTasks() {
+	log.Println("[Scheduler] 启动定时任务")
 	go periodicCleanup()
-	log.Printf("过期链接清理任务已启动")
 }
 
+// periodicCleanup 每天清理一次历史遗留数据, 启动时先跑一轮
 func periodicCleanup() {
-	ticker := time.NewTicker(24 * time.Hour) // 每天执行一次清理
+	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
 
-	// 立即执行一次清理
-	cleanupExpiredLinks()
-
-	// 使用 for range 替代 for { select {} }
+	cleanupLegacyAutoLinks()
 	for range ticker.C {
-		cleanupExpiredLinks()
+		cleanupLegacyAutoLinks()
 	}
 }
 
-func cleanupExpiredLinks() {
-	rowsAffected, err := core.DB.CleanupExpiredLinks()
+// cleanupLegacyAutoLinks 排干"同一链接不能发两次"功能下线后残留的自动关键词
+func cleanupLegacyAutoLinks() {
+	rowsAffected, err := core.DB.CleanupLegacyAutoLinks()
 	if err != nil {
-		log.Printf("清理过期链接时发生错误: %v", err)
-	} else {
-		log.Printf("已成功清理 %d 条过期链接", rowsAffected)
+		log.Printf("[Scheduler] 清理历史自动关键词失败: %v", err)
+		return
+	}
+	if rowsAffected > 0 {
+		log.Printf("[Scheduler] 已清理 %d 条历史自动关键词", rowsAffected)
 	}
 }
