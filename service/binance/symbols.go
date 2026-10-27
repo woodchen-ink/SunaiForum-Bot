@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/adshao/go-binance/v2"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -19,7 +18,10 @@ var (
 
 // LoadSymbols 初始化并缓存所有交易对
 func LoadAllSymbols() error {
-	client := binance.NewClient("", "")
+	client, err := getClient()
+	if err != nil {
+		return err
+	}
 	exchangeInfo, err := client.NewExchangeInfoService().Do(context.Background())
 	if err != nil {
 		return err

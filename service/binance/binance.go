@@ -11,7 +11,6 @@ import (
 
 	"SunaiForum-Bot/core"
 
-	"github.com/adshao/go-binance/v2"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -29,27 +28,27 @@ const lastMsgIDConfigKey = "binance_last_msg_id"
 func loadLastMsgID() {
 	lastMsgMu.Lock()
 	defer lastMsgMu.Unlock()
-	
+
 	value, err := core.DB.GetConfig(lastMsgIDConfigKey)
 	if err != nil {
 		log.Printf("[Binance] 加载lastMsgID失败: %v", err)
 		lastMsgID = 0
 		return
 	}
-	
+
 	if value == "" {
 		lastMsgID = 0
 		log.Printf("[Binance] 未找到保存的lastMsgID，设置为0")
 		return
 	}
-	
+
 	msgID, err := strconv.Atoi(value)
 	if err != nil {
 		log.Printf("[Binance] 解析lastMsgID失败: %v", err)
 		lastMsgID = 0
 		return
 	}
-	
+
 	lastMsgID = msgID
 	log.Printf("[Binance] 从数据库加载lastMsgID: %d", lastMsgID)
 }
@@ -58,7 +57,7 @@ func loadLastMsgID() {
 func saveLastMsgID(msgID int) {
 	lastMsgMu.Lock()
 	defer lastMsgMu.Unlock()
-	
+
 	lastMsgID = msgID
 	err := core.DB.SetConfig(lastMsgIDConfigKey, strconv.Itoa(msgID))
 	if err != nil {
@@ -81,8 +80,12 @@ type tickerInfo struct {
 	changePercent float64
 }
 
+// getTickerInfo fetches current price and daily change through the shared client.
 func getTickerInfo(symbol string) (tickerInfo, error) {
-	client := binance.NewClient("", "")
+	client, err := getClient()
+	if err != nil {
+		return tickerInfo{}, err
+	}
 
 	ticker, err := client.NewListPricesService().Symbol(symbol).Do(context.Background())
 	if err != nil {

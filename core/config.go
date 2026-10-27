@@ -17,13 +17,14 @@ var (
 	// Bot 全局唯一的 Telegram 客户端, 消息轮询与各业务模块共用
 	Bot *tgbotapi.BotAPI
 
-	BotToken   string
-	ChatID     int64
-	AdminID    int64
-	Symbols    []string // 币安交易对, 为空表示只提供查询不主动推送
-	BusinessTZ *time.Location
-	DBFile     string
-	DebugMode  bool
+	BotToken        string
+	ChatID          int64
+	AdminID         int64
+	Symbols         []string // 币安交易对, 为空表示只提供查询不主动推送
+	BinanceProxyURL string   // 仅用于币安 API 的可选 SOCKS5 代理
+	BusinessTZ      *time.Location
+	DBFile          string
+	DebugMode       bool
 
 	// AutoBanThreshold 累计违规多少次后自动封禁, 0 表示只删消息不封禁
 	AutoBanThreshold int
@@ -76,6 +77,7 @@ func Init() error {
 
 	DebugMode = os.Getenv("DEBUG_MODE") == "true"
 	Symbols = parseSymbols(os.Getenv("SYMBOLS"))
+	BinanceProxyURL = strings.TrimSpace(os.Getenv("BINANCE_PROXY_URL"))
 	AutoBanThreshold = parseIntEnv("AUTO_BAN_THRESHOLD", defaultAutoBanThreshold)
 	DeleteServiceMessages = parseBoolEnv("DELETE_SERVICE_MESSAGES", true)
 	BackupKeep = parseIntEnv("BACKUP_KEEP", defaultBackupKeep)

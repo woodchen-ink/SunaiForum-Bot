@@ -12,6 +12,8 @@ services:
       # ---- 可选: 行情推送 ----
       - SYMBOLS=DOGS/USDT,TON/USDT       # 留空则只提供查询, 不主动推送
       - TZ=Asia/Singapore
+      # 仅币安 API 使用; 支持 socks5://用户名:密码@代理地址:端口
+      # - BINANCE_PROXY_URL=socks5://proxy.example.com:1080
 
       # ---- 可选: 内容审核 ----
       - AUTO_BAN_THRESHOLD=3             # 累计违规几次自动封禁; 设 0 只删消息不封禁
